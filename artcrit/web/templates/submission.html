@@ -18,11 +18,12 @@
   <figure class="panel">
     <div class="stage" id="drawing-stage">
       <img src="/images/{{ s.normalized_path }}" alt="Your drawing">
-      <img src="/submissions/{{ s.id }}/photo-crop" alt="" class="overlay" id="overlay-img" hidden>
+      <img src="/submissions/{{ s.id }}/overlay" alt="" class="overlay" id="overlay-img" hidden>
       {{ boxes("drawing") }}
     </div>
     <figcaption>Your drawing
-      <label class="overlay-ctl"><input type="checkbox" id="overlay-toggle"> Overlay photo</label>
+      <label class="overlay-ctl"><input type="checkbox" id="overlay-toggle"> Overlay photo
+        <span class="hint">({{ "aligned to your drawing" if overlay_kind == "aligned" else "not aligned — couldn't find outlines" }})</span></label>
       <input type="range" id="overlay-opacity" min="0" max="100" value="50" aria-label="Overlay opacity" hidden>
     </figcaption>
   </figure>

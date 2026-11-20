@@ -84,7 +84,11 @@ class Geometry:
     def compare(self, drawing: np.ndarray, photo: np.ndarray) -> Comparison:
         key = self._key(drawing, photo)
         if key not in self._outline:
-            self._outline[key] = (self._compare(drawing, photo), drawing, photo)  # keep arrays alive
+            try:
+                result = self._compare(drawing, photo)
+            except Exception as e:  # measurement is best-effort; never take down a critique
+                result = Comparison(False, f"measurement error ({type(e).__name__})")
+            self._outline[key] = (result, drawing, photo)  # keep arrays alive
         return self._outline[key][0]
 
     def _compare(self, drawing: np.ndarray, photo: np.ndarray) -> Comparison:
@@ -114,7 +118,10 @@ class Geometry:
     def faces(self, drawing: np.ndarray, photo: np.ndarray) -> FaceComparison:
         key = self._key(drawing, photo)
         if key not in self._faces:
-            self._faces[key] = self._compare_faces(drawing, photo)
+            try:
+                self._faces[key] = self._compare_faces(drawing, photo)
+            except Exception as e:
+                self._faces[key] = FaceComparison(False, f"measurement error ({type(e).__name__})")
         return self._faces[key]
 
     def _compare_faces(self, drawing: np.ndarray, photo: np.ndarray) -> FaceComparison:

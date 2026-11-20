@@ -67,3 +67,19 @@ def test_cached_once():
     g.faces(d, p)
     g.faces(d, p)
     assert len(calls) == 2  # drawing + photo, once each
+
+
+def test_detector_crash_reports_unavailable():
+    def boom(img, model):
+        raise RuntimeError("mediapipe exploded")
+
+    f = Geometry(None, detector=boom).faces(ellipse_drawing(), photo_like())
+    assert not f.available and "error" in f.reason
+
+
+def test_outline_crash_reports_unavailable(monkeypatch):
+    import artcrit.geometry.service as svc
+
+    monkeypatch.setattr(svc, "align", lambda a, b: (_ for _ in ()).throw(ValueError("bad")))
+    c = Geometry(None).compare(ellipse_drawing(), photo_like())
+    assert not c.available and "error" in c.reason

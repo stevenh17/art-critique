@@ -1,14 +1,17 @@
 """FastAPI app: upload → adjust → critique → results."""
 
 import json
+import logging
 import secrets
+
+import cv2
 from urllib.parse import urlparse
 import threading
 from pathlib import Path
 from typing import Callable
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -23,6 +26,7 @@ from artcrit.geometry.service import Geometry
 from artcrit.web.worker import run_submission
 
 HERE = Path(__file__).parent
+log = logging.getLogger(__name__)
 ISSUE_EVENTS = ("thumb_up", "thumb_down", "unclear", "intentional", "show_me")
 
 
@@ -176,7 +180,8 @@ def create_app(settings: Settings, engine: AgentEngine,
     @app.get("/submissions/{submission_id}", response_class=HTMLResponse)
     def submission(request: Request, submission_id: int):
         view = get_view(submission_id)
-        ctx = {"s": view, "versions": store.versions(view.drawing_id), "prev": None, "outcomes": [], "closeness": None}
+        ctx = {"s": view, "versions": store.versions(view.drawing_id), "prev": None, "outcomes": [], "closeness": None,
+               "overlay_kind": overlay_for(view)[1] if view.issues else None}
         if view.parent_id is not None:
             ctx["prev"] = store.get_submission(view.parent_id)
             ctx["outcomes"] = store.outcomes_for(view.id)
@@ -201,6 +206,30 @@ def create_app(settings: Settings, engine: AgentEngine,
         store.add_status(submission_id, "queued", "retry")
         start(submission_id)
         return RedirectResponse(f"/submissions/{submission_id}", status_code=303)
+
+    overlay_cache: dict[int, tuple[bytes, str]] = {}
+
+    def overlay_for(view) -> tuple[bytes, str]:
+        """The cropped photo in drawing pixels: aligned when outlines are found, else just resized."""
+        if view.id not in overlay_cache:
+            drawing = images.load(view.normalized_path)
+            photo = crop(images.load(view.photo_path), view.photo_crop)
+            h, w = drawing.shape[:2]
+            out, kind = cv2.resize(photo, (w, h), interpolation=cv2.INTER_AREA), "resized"
+            try:
+                comp = geometry.compare(drawing, photo) if geometry is not None else None
+                if comp is not None and comp.available:
+                    out, kind = cv2.warpAffine(photo, comp.full_matrix(), (w, h), flags=cv2.INTER_LINEAR,
+                                               borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255)), "aligned"
+            except Exception:  # measurement problems must never break the results page
+                log.exception("overlay alignment failed for submission %s", view.id)
+            overlay_cache[view.id] = (cv2.imencode(".png", out)[1].tobytes(), kind)
+        return overlay_cache[view.id]
+
+    @app.get("/submissions/{submission_id}/overlay")
+    def overlay(submission_id: int):
+        data, kind = overlay_for(get_view(submission_id))
+        return Response(data, media_type="image/png", headers={"X-Overlay": kind})
 
     def photo_crop_path(view) -> str:
         return images.save(crop(images.load(view.photo_path), view.photo_crop), "photo-crop")
