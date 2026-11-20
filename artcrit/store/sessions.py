@@ -54,6 +54,7 @@ class SubmissionView:
     model: str | None
     lessons_sha: str | None
     issues: list[IssueView]
+    parent_id: int | None = None
 
 
 class SessionStore:
@@ -159,8 +160,19 @@ class SessionStore:
                 s["id"], s["drawing_id"], s["version"], s["normalized_path"], s["photo_path"],
                 tuple(json.loads(s["photo_crop"])), s["photo_source_url"], s["photo_license"], bool(s["publish"]),
                 st["status"], st["detail"], crit["model"] if crit else None, crit["lessons_sha"] if crit else None,
-                self._issue_views(c, submission_id),
+                self._issue_views(c, submission_id), s["parent_id"],
             )
+
+    def latest_submission(self, drawing_id: int) -> int | None:
+        with self._conn() as c:
+            row = c.execute("SELECT MAX(id) AS id FROM submissions WHERE drawing_id = ?", (drawing_id,)).fetchone()
+        return row["id"]
+
+    def versions(self, drawing_id: int) -> list[tuple[int, int]]:
+        with self._conn() as c:
+            rows = c.execute("SELECT id, version FROM submissions WHERE drawing_id = ? ORDER BY version",
+                             (drawing_id,)).fetchall()
+        return [(r["id"], r["version"]) for r in rows]
 
     def unfinished_submissions(self) -> list[int]:
         """Submissions whose latest status is queued or running."""

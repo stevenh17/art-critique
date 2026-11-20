@@ -98,15 +98,41 @@ def create_app(settings: Settings, engine: AgentEngine,
         except UnsupportedImageError as e:
             raise HTTPException(422, f"Could not read image: {e}")
         corners = find_paper(d_img) or full_corners(d_img)
-        token = secrets.token_hex(8)
-        meta = {
+        token = save_token({
             "drawing": images.save(d_img, "original"), "photo": images.save(p_img, "photo"),
             "corners": [list(c) for c in corners], "photo_source_url": photo_source_url.strip(),
             "photo_license": photo_license.strip(), "publish": publish is not None,
-        }
+        })
+        return RedirectResponse(f"/uploads/{token}/adjust", status_code=303)
+
+    def save_token(meta: dict) -> str:
+        token = secrets.token_hex(8)
         path = upload_path(token)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(meta))
+        return token
+
+    def latest_or_404(drawing_id: int) -> int:
+        sid = store.latest_submission(drawing_id)
+        if sid is None:
+            raise HTTPException(404, "drawing not found")
+        return sid
+
+    @app.get("/drawings/{drawing_id}/revise", response_class=HTMLResponse)
+    def revise_form(request: Request, drawing_id: int):
+        latest_or_404(drawing_id)
+        return templates.TemplateResponse(request, "revise.html", {"drawing_id": drawing_id})
+
+    @app.post("/drawings/{drawing_id}/revisions")
+    async def create_revision(drawing_id: int, drawing: UploadFile = File(...)):
+        latest_or_404(drawing_id)
+        try:
+            d_img = load_image(await drawing.read())
+        except UnsupportedImageError as e:
+            raise HTTPException(422, f"Could not read image: {e}")
+        corners = find_paper(d_img) or full_corners(d_img)
+        token = save_token({"drawing": images.save(d_img, "original"), "corners": [list(c) for c in corners],
+                            "drawing_id": drawing_id})
         return RedirectResponse(f"/uploads/{token}/adjust", status_code=303)
 
     @app.get("/uploads/{token}/adjust", response_class=HTMLResponse)
@@ -116,17 +142,26 @@ def create_app(settings: Settings, engine: AgentEngine,
                                           {"token": token, "meta": meta, "corners_json": json.dumps(meta["corners"])})
 
     @app.post("/uploads/{token}/submit")
-    def submit(token: str, corners: str = Form(...), photo_crop: str = Form(...)):
+    def submit(token: str, corners: str = Form(...), photo_crop: str | None = Form(None)):
         meta = load_upload(token)
-        pts, box = _parse_corners(corners), _parse_box(photo_crop)
+        pts = _parse_corners(corners)
+        revision_of = meta.get("drawing_id")
+        if revision_of is None and photo_crop is None:
+            raise HTTPException(422, "photo_crop is required")
         original = images.load(meta["drawing"])
         try:
             pts = validate_corners(pts, original.shape)
         except ValueError as e:
             raise HTTPException(422, f"Corners: {e}")
-        normalized = normalize(warp(original, pts))
-        drawing_id = store.add_drawing(meta["photo"], box, meta["photo_source_url"], meta["photo_license"], meta["publish"])
-        sid = store.add_submission(drawing_id, 1, None, meta["drawing"], images.save(normalized, "drawing"), pts)
+        normalized = images.save(normalize(warp(original, pts)), "drawing")
+        if revision_of is None:
+            drawing_id = store.add_drawing(meta["photo"], _parse_box(photo_crop), meta["photo_source_url"],
+                                           meta["photo_license"], meta["publish"])
+            version, parent = 1, None
+        else:
+            drawing_id, parent = revision_of, latest_or_404(revision_of)
+            version = max(v for _, v in store.versions(drawing_id)) + 1
+        sid = store.add_submission(drawing_id, version, parent, meta["drawing"], normalized, pts)
         start(sid)
         return RedirectResponse(f"/submissions/{sid}", status_code=303)
 
@@ -138,7 +173,9 @@ def create_app(settings: Settings, engine: AgentEngine,
 
     @app.get("/submissions/{submission_id}", response_class=HTMLResponse)
     def submission(request: Request, submission_id: int):
-        return templates.TemplateResponse(request, "submission.html", {"s": get_view(submission_id)})
+        view = get_view(submission_id)
+        return templates.TemplateResponse(request, "submission.html",
+                                          {"s": view, "versions": store.versions(view.drawing_id)})
 
     @app.get("/submissions/{submission_id}/status", response_class=HTMLResponse)
     def status(request: Request, submission_id: int):

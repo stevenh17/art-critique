@@ -7,7 +7,10 @@
   {% endfor %}
 {% endmacro %}
 {% block content %}
-<h1>Critique</h1>
+<h1>Critique <span class="version">v{{ s.version }}</span></h1>
+{% if versions %}
+<nav class="versions">{% for vid, v in versions %}{% if not loop.first %} · {% endif %}<a href="/submissions/{{ vid }}"{% if vid == s.id %} aria-current="page"{% endif %}>v{{ v }}</a>{% endfor %}</nav>
+{% endif %}
 {% if s.status != "done" %}{% include "_status.html" %}{% endif %}
 {% if s.issues %}
 <div class="compare">
@@ -33,6 +36,9 @@
 <ol class="issues">
   {% for issue in s.issues %}{% set zooms = None %}{% include "_issue.html" %}{% endfor %}
 </ol>
+{% endif %}
+{% if s.status == "done" %}
+<p class="next"><a class="button" href="/drawings/{{ s.drawing_id }}/revise">Upload revision</a></p>
 {% endif %}
 {% endblock %}
 {% block scripts %}<script src="/static/overlay.js"></script>{% endblock %}

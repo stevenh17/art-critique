@@ -10,6 +10,7 @@
     </div>
     <input type="hidden" name="corners" id="corners" value="{{ corners_json }}">
   </section>
+  {% if not meta.drawing_id %}
   <section>
     <h2>2. Drag a box on the photo around roughly what you drew</h2>
     <div class="crop-stage" id="crop-stage">
@@ -18,10 +19,11 @@
     </div>
     <input type="hidden" name="photo_crop" id="photo_crop" value="[0, 0, 1, 1]">
   </section>
+  {% endif %}
   <button type="submit">Get critique</button>
 </form>
 {% endblock %}
 {% block scripts %}
 <script src="/static/corners.js"></script>
-<script src="/static/crop.js"></script>
+{% if not meta.drawing_id %}<script src="/static/crop.js"></script>{% endif %}
 {% endblock %}

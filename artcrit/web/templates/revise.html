@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Upload a revision</h1>
+<p class="hint">Same reference photo and crop as before. Photograph or scan the revised drawing the same way you did the first time.</p>
+<form action="/drawings/{{ drawing_id }}/revisions" method="post" enctype="multipart/form-data" class="stack">
+  <label>Revised drawing
+    <input type="file" name="drawing" accept="image/*,.heic,.heif" required></label>
+  <button type="submit">Upload</button>
+</form>
+{% endblock %}

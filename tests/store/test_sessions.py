@@ -90,3 +90,12 @@ def test_no_update_or_delete_sql():
     root = Path(__file__).resolve().parents[2] / "artcrit" / "store"
     text = "\n".join(p.read_text() for p in root.rglob("*") if p.suffix in {".py", ".sql"})
     assert not re.search(r"\b(UPDATE|DELETE)\s", text, re.IGNORECASE)
+
+
+def test_latest_submission_and_versions(store):
+    d, s1 = _submission(store)
+    s2 = store.add_submission(d, 2, s1, "orig/o2.png", "drawing/n2.png", ((0, 0), (9, 0), (9, 9), (0, 9)))
+    assert store.latest_submission(d) == s2
+    assert store.versions(d) == [(s1, 1), (s2, 2)]
+    assert store.get_submission(s2).parent_id == s1
+    assert store.latest_submission(999) is None
