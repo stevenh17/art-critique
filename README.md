@@ -4,21 +4,25 @@ Upload a realistic drawing and the reference photo you drew it from. An agent co
 
 Critique quality improves over time through a curated memory of **lessons**: markdown files in [`lessons/`](lessons/) that a separate "dreamer" agent consolidates offline from session outcomes, through reviewed pull requests.
 
-> Status: **Plan 1 of 4 (critique core)** is built. See the [roadmap](#roadmap).
+> Status: **Plans 1–2 of 4** (critique core, revisions and judging) are built. See the [roadmap](#roadmap).
 
 ## How it works
 
 ```
 local web app (FastAPI + Jinja + HTMX, http://127.0.0.1:8000)
   ├─ preprocess   OpenCV: find the paper, flatten the phone photo, normalize
-  ├─ critic       agent with ONLY three tools (zoom, grid_overlay, load_lesson), ≤ 8 tool calls
+  ├─ critic       agent with ONLY five tools (zoom, grid_overlay, load_lesson,
+  │                 outline_compare, face_landmarks), ≤ 8 tool calls in total
   │                 └─ reads lessons/core.md + topic lessons on demand
+  ├─ geometry     outline extraction + best-fit alignment, MediaPipe face landmarks
+  ├─ judge        separate agent call, no tools: was each issue fixed in the revision?
   └─ session log  append-only SQLite + images under data/
 dreamer (planned)  reads the log → edits lessons/ → opens a PR for review
 ```
 
 - **Bounded agent.** The critic runs on the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk) with every built-in tool disabled. It can only zoom into grid cells, overlay a labeled A1–H8 grid, and load a lesson. Output is validated JSON: wrong cells, a wrong issue count, or an unknown category get one retry.
 - **Separation of roles.** Critic agents read lessons and never write them. Only the dreamer writes lessons, and every change is a pull request.
+- **The critic never grades its own homework.** When you upload a revision, a separate judge sees only the issue and three crops (old, new, photo), never the critic's reasoning. For proportion issues, confident measurement overrides the judge: outline distance after best-fit alignment, face-landmark ratios when the issue is about one or two features, or six points you click ("Help me measure"). Every judge/measurement disagreement is logged.
 - **Append-only log.** Ratings, "That was on purpose" and "Show me" clicks are new event rows; nothing is overwritten.
 - **Runs on your Claude login.** No API key; usage counts against your Claude plan. If you hit the limit, the submission waits with a Retry button.
 
@@ -29,6 +33,7 @@ Requires Python ≥ 3.11 and a Claude subscription you've signed in to on this m
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
+.venv/bin/artcrit fetch-models # one-time: face landmark model (3.8 MB) into data/models/
 .venv/bin/artcrit serve        # http://127.0.0.1:8000
 ```
 
@@ -42,7 +47,7 @@ ARTCRIT_LIVE=1 .venv/bin/pytest -m live  # one real critique on your login
 ## Roadmap
 
 1. **Critique core** ✅: upload, deskew, crop, critic, session log, results page.
-2. **Revisions and judging:** resubmit a revision; a separate judge plus outline and face-landmark geometry decide whether each issue was fixed.
+2. **Revisions and judging** ✅: resubmit a revision; a separate judge plus outline and face-landmark geometry decide whether each issue was fixed; aligned overlay.
 3. **Static portfolio site:** automatic publishing of critiques, revisions and lesson history to GitHub Pages, with photo attribution.
 4. **Dreamer:** offline lesson consolidation that opens pull requests.
 5. *TODO:* **test gate**, a held-out benchmark that blocks lesson changes that make critiques worse.
