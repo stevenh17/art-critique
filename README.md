@@ -4,7 +4,7 @@ Upload a realistic drawing and the reference photo you drew it from. An agent co
 
 Critique quality improves over time through a curated memory of **lessons**: markdown files in [`lessons/`](lessons/) that a separate "dreamer" agent consolidates offline from session outcomes, through reviewed pull requests.
 
-> Status: **Plans 1–3 of 4** (critique core, revisions and judging, portfolio site) are built. See the [roadmap](#roadmap).
+> Status: **All 4 plans** (critique core, revisions and judging, portfolio site, dreamer) are built; the test gate is a TODO. See the [roadmap](#roadmap).
 >
 > Live portfolio: *(link appears once GitHub Pages is set up — see [docs/publishing.md](docs/publishing.md))*
 
@@ -18,9 +18,9 @@ local web app (FastAPI + Jinja + HTMX, http://127.0.0.1:8000)
   │                 └─ reads lessons/core.md + topic lessons on demand
   ├─ geometry     outline extraction + best-fit alignment, MediaPipe face landmarks
   ├─ judge        separate agent call, no tools: was each issue fixed in the revision?
-  └─ session log  append-only SQLite + images under data/
+  ├─ session log  append-only SQLite + images under data/
   └─ publisher    rebuilds a static site → commits to gh-pages → pushes (GitHub Pages)
-dreamer (planned)  reads the log → edits lessons/ → opens a PR for review
+dreamer (artcrit dream)  reads new evidence → proposes lesson edits → safety checks → PR for review
 ```
 
 - **Bounded agent.** The critic runs on the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk) with every built-in tool disabled. It can only zoom into grid cells, overlay a labeled A1–H8 grid, and load a lesson. Output is validated JSON: wrong cells, a wrong issue count, or an unknown category get one retry.
@@ -39,6 +39,7 @@ python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 .venv/bin/artcrit fetch-models # one-time: face landmark model (3.8 MB) into data/models/
 .venv/bin/artcrit serve        # http://127.0.0.1:8000
+.venv/bin/artcrit dream --dry-run   # what the dreamer would change in lessons/ (see docs/dreamer.md)
 ```
 
 Tests:
@@ -53,7 +54,7 @@ ARTCRIT_LIVE=1 .venv/bin/pytest -m live  # one real critique on your login
 1. **Critique core** ✅: upload, deskew, crop, critic, session log, results page.
 2. **Revisions and judging** ✅: resubmit a revision; a separate judge plus outline and face-landmark geometry decide whether each issue was fixed; aligned overlay.
 3. **Static portfolio site** ✅: automatic publishing of critiques, revisions and lesson history to GitHub Pages, with photo attribution.
-4. **Dreamer:** offline lesson consolidation that opens pull requests.
+4. **Dreamer** ✅: offline lesson consolidation from revision outcomes, gated by deterministic checks, delivered as pull requests. See [docs/dreamer.md](docs/dreamer.md).
 5. *TODO:* **test gate**, a held-out benchmark that blocks lesson changes that make critiques worse.
 
 Design: [`docs/superpowers/specs/2026-11-19-agentic-art-critique-design.md`](docs/superpowers/specs/2026-11-19-agentic-art-critique-design.md).

@@ -38,3 +38,26 @@ def test_live_judge_parses():
                       _face(60), _face(5), _face(0), ClaudeSDKEngine())
     print(res)
     assert res.verdict in VERDICTS
+
+
+def test_live_dreamer_proposes_valid_edit_or_none():
+    from artcrit.dreamer.agent import dream
+    from artcrit.dreamer.export import EvidenceRecord, Export, Watermark
+    from artcrit.dreamer.workspace import LessonWorkspace
+
+    def rec(n, fixed):
+        return EvidenceRecord(f"s{n}", 1, "proportion", "Eyes placed too high on the head",
+                              "Move both eyes down to about halfway between the top of the head and the chin.",
+                              ["Check eye line before features"], {"thumb_up": 1, "thumb_down": 0, "unclear": 0, "show_me": 0},
+                              False, [{"verdict": "fixed" if fixed else "not_fixed", "measured": fixed, "disagreement": False}])
+
+    export = Export([rec(101, True), rec(102, True), rec(103, False), rec(104, True), rec(105, True)],
+                    Watermark(105, 5, 20), [])
+    base = LessonWorkspace.from_ref(REPO, "main")
+    res = dream(export, base, ClaudeSDKEngine(), [], today="2026-11-21")
+    print("\nOK:", res.ok, "| model:", res.model, "\nSUMMARY:", res.summary, "\nCHANGES:", res.changes,
+          "\nFAILURES:", res.failures, "\nCHANGED FILES:", list(res.workspace.changed(base)))
+    for path, text in res.workspace.changed(base).items():
+        print(f"--- {path}\n{text}")
+    assert res.ok or not res.failures
+    assert not any(f.rule == "format" for f in res.failures)
