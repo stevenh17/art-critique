@@ -3,8 +3,10 @@
 import json
 import logging
 import secrets
+from dataclasses import asdict
 
 import cv2
+import numpy as np
 from urllib.parse import urlparse
 import threading
 from pathlib import Path
@@ -22,7 +24,10 @@ from artcrit.imaging.load import UnsupportedImageError, load_image
 from artcrit.imaging.regions import crop, zoom
 from artcrit.store.images import ImageStore
 from artcrit.store.sessions import SessionStore
+from artcrit.geometry.points import POINT_NAMES, measure_from_points
 from artcrit.geometry.service import Geometry
+from artcrit.judge import JudgeResult
+from artcrit.outcomes import OutcomeRow, final_verdict
 from artcrit.web.worker import run_submission
 
 HERE = Path(__file__).parent
@@ -237,6 +242,45 @@ def create_app(settings: Settings, engine: AgentEngine,
     @app.get("/submissions/{submission_id}/photo-crop")
     def photo_crop(submission_id: int):
         return FileResponse(images.resolve(photo_crop_path(get_view(submission_id))), media_type="image/png")
+
+    def measure_context(submission_id: int, issue_id: int):
+        view = get_view(submission_id)
+        if view.parent_id is None:
+            raise HTTPException(404, "measuring needs a revision")
+        outcome = next((o for o in store.outcomes_for(view.id) if o.issue_id == issue_id), None)
+        if outcome is None:
+            raise HTTPException(404, "no outcome for that issue")
+        return view, store.get_submission(view.parent_id), outcome
+
+    @app.get("/submissions/{submission_id}/measure", response_class=HTMLResponse)
+    def measure_form(request: Request, submission_id: int, issue: int):
+        view, prev, outcome = measure_context(submission_id, issue)
+        return templates.TemplateResponse(request, "measure.html", {
+            "s": view, "prev": prev, "outcome": outcome, "names": POINT_NAMES,
+            "photo_src": f"/submissions/{view.id}/photo-crop"})
+
+    @app.post("/submissions/{submission_id}/measure")
+    def measure_submit(submission_id: int, issue_id: int = Form(...), points: str = Form(...)):
+        view, prev, outcome = measure_context(submission_id, issue_id)
+        try:
+            raw = json.loads(points)
+            pts = {k: np.array(raw[k], float) for k in ("photo", "old", "new")}
+        except (ValueError, KeyError, TypeError):
+            raise HTTPException(422, "points must be {photo, old, new} lists of [x, y]")
+        if any(p.shape != (len(POINT_NAMES), 2) or (p < 0).any() or (p > 1).any() for p in pts.values()):
+            raise HTTPException(422, f"each image needs exactly {len(POINT_NAMES)} points inside the image")
+        old_img, new_img = images.load(prev.normalized_path), images.load(view.normalized_path)
+        photo = crop(images.load(view.photo_path), view.photo_crop)
+        px = lambda p, img: p * (img.shape[1], img.shape[0])  # noqa: E731
+        issue = next(i for i in prev.issues if i.id == issue_id)
+        measure = measure_from_points(issue.drawing_box, px(pts["old"], old_img), px(pts["new"], new_img),
+                                      px(pts["photo"], photo), old_img.shape)
+        verdict, source, disagree = final_verdict(
+            outcome.category, JudgeResult(outcome.judge_verdict, outcome.judge_reason, ""), measure)
+        store.add_event("help_measure", issue_id=issue_id, submission_id=view.id, payload=raw)
+        store.add_outcome(OutcomeRow(issue_id, view.id, outcome.judge_verdict, outcome.judge_reason,
+                                     json.dumps(asdict(measure)), verdict, source, disagree))
+        return RedirectResponse(f"/submissions/{view.id}", status_code=303)
 
     @app.post("/issues/{issue_id}/events", response_class=HTMLResponse)
     def issue_event(request: Request, issue_id: int, type: str = Form(...)):

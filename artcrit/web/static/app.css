@@ -61,3 +61,8 @@ a.button { display: inline-block; padding: 8px 14px; border-radius: 6px; backgro
 .verdict[data-verdict="not_fixed"] { background: #f6d9d4; color: #9b2f1f; }
 .how { color: var(--muted); font-size: 13px; }
 .closeness { margin: 10px 0 0; font-weight: 600; }
+.measure-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+.measure-grid figure { margin: 0; } .measure-stage { cursor: crosshair; }
+.pt { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: var(--accent-2);
+  color: #fff; font-size: 11px; display: grid; place-items: center; cursor: pointer; }
+@media (max-width: 700px) { .measure-grid { grid-template-columns: 1fr; } }

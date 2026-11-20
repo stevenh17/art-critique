@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Help me measure{% endblock %}
+{% block content %}
+<h1>Help me measure: {{ outcome.title }}</h1>
+<p class="hint">On each image, click these points in order: {{ names | join(", ") }}. Click a point again to undo the last one.</p>
+<form action="/submissions/{{ s.id }}/measure" method="post" id="measure-form">
+  <input type="hidden" name="issue_id" value="{{ outcome.issue_id }}">
+  <input type="hidden" name="points" id="points">
+  <div class="measure-grid">
+    {% for key, label, src in [("photo", "Reference", photo_src), ("old", "v" ~ prev.version, "/images/" ~ prev.normalized_path), ("new", "v" ~ s.version, "/images/" ~ s.normalized_path)] %}
+    <figure>
+      <div class="stage measure-stage" data-key="{{ key }}"><img class="measure-img" src="{{ src }}" alt="{{ label }}"></div>
+      <figcaption>{{ label }} — next: <span class="next-point" data-key="{{ key }}"></span></figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+  <button type="submit" id="measure-submit" disabled>Measure</button>
+</form>
+<script>window.POINT_NAMES = {{ names | list | tojson }};</script>
+{% endblock %}
+{% block scripts %}<script src="/static/points.js"></script>{% endblock %}

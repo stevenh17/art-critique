@@ -11,6 +11,9 @@
       <span class="outcome-title">{{ o.title }}</span>
       <span class="verdict" data-verdict="{{ o.final_verdict }}">{{ o.final_verdict | replace("_", " ") | replace("cant tell", "can't tell") }}</span>
       <span class="how" title="{{ o.judge_reason }}">{{ "measured" if o.source.startswith("geometry") else "judged" }}</span>
+      {% if o.category == "proportion" and o.source == "judge" %}
+      <a class="how" href="/submissions/{{ s.id }}/measure?issue={{ o.issue_id }}">Help me measure</a>
+      {% endif %}
     </li>
     {% endfor %}
   </ul>
