@@ -12,8 +12,8 @@
 <nav class="versions">{% for vid, v in versions %}{% if not loop.first %} · {% endif %}<a href="/submissions/{{ vid }}"{% if vid == s.id %} aria-current="page"{% endif %}>v{{ v }}</a>{% endfor %}</nav>
 {% endif %}
 <form class="publish-state" action="/drawings/{{ s.drawing_id }}/publish" method="post">
-  {% if published %}<span>Published on portfolio</span><input type="hidden" name="publish" value="off"><button type="submit" class="chip">Unpublish</button>
-  {% else %}<span>Not published</span><input type="hidden" name="publish" value="on"><button type="submit" class="chip">Publish</button>{% endif %}
+  {% if published %}<span>Published on portfolio</span><input type="hidden" name="publish" value="off"><button type="submit" class="chip" title="Removes it from the live site; earlier versions stay in the gh-pages git history">Unpublish</button>
+  {% else %}<span>Not published</span><input type="hidden" name="publish" value="on"><button type="submit" class="chip" title="Once pushed, it stays in the gh-pages git history even if unpublished later">Publish</button>{% endif %}
 </form>
 {% if s.status != "done" %}{% include "_status.html" %}{% endif %}
 {% if prev %}{% include "_outcomes.html" %}{% endif %}

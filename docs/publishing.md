@@ -9,6 +9,8 @@ The local app rebuilds a static site into `site/` and commits it to the `gh-page
 - Reference photo credit (source link and license).
 - The lessons and their git history, plus a "how it works" page.
 
+**Unpublishing** removes a drawing from the live site on the next publish, but earlier versions of the site stay in the `gh-pages` branch history on GitHub (the publisher never force-pushes or rewrites history). Only publish drawings you're comfortable having on record.
+
 Never published: your original phone photos, tool traces, file paths, the judge's reasons, raw clicks, and error details.
 
 ## One-time setup

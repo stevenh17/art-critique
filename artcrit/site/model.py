@@ -92,4 +92,6 @@ def build_site_data(store: SessionStore, repo_dir: Path) -> SiteData:
         drawings.append(SiteDrawing(d, f"d{d}", f"Drawing {d}", first.photo_path, first.photo_crop,
                                     _safe_url(first.photo_source_url), first.photo_license, versions))
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    return SiteData(drawings, now, lessons_sha(repo_dir))
+    from artcrit.site.lessons_page import site_lessons_ref
+
+    return SiteData(drawings, now, lessons_sha(repo_dir, site_lessons_ref(repo_dir) or "HEAD"))

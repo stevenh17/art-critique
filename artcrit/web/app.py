@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -26,8 +26,7 @@ from artcrit.store.images import ImageStore
 from artcrit.store.sessions import SessionStore
 from artcrit.geometry.points import POINT_NAMES, measure_from_points
 from artcrit.geometry.service import Geometry
-from artcrit.lessons import lessons_sha
-from artcrit.site.service import Publisher, published_lessons_sha
+from artcrit.site.service import Publisher, public_lessons_sha, published_lessons_sha
 from artcrit.judge import JudgeResult
 from artcrit.outcomes import OutcomeRow, final_verdict
 from artcrit.web.worker import run_submission
@@ -69,6 +68,15 @@ def create_app(settings: Settings, engine: AgentEngine,
     images = ImageStore(settings.images_dir)
     templates = Jinja2Templates(directory=HERE / "templates")
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+
+    @app.middleware("http")
+    async def same_origin_posts(request: Request, call_next):
+        """Refuse POSTs sent from other sites (a page open in the browser must not publish or retry)."""
+        if request.method == "POST":
+            source = request.headers.get("origin") or request.headers.get("referer")
+            if source is not None and urlparse(source).netloc != request.headers.get("host", ""):
+                return PlainTextResponse("cross-site request refused", status_code=403)
+        return await call_next(request)
     app.state.store, app.state.images, app.state.templates = store, images, templates
     for sid in store.unfinished_submissions():  # a previous server stopped mid-critique
         store.add_status(sid, "failed", "interrupted — retry")
@@ -76,7 +84,7 @@ def create_app(settings: Settings, engine: AgentEngine,
         publisher = Publisher(store, images, settings, run_in_background)
     app.state.publisher = publisher
     templates.env.globals["publish_status"] = lambda: publisher.last() if publisher is not None else None
-    if publisher is not None and published_lessons_sha(settings) != lessons_sha(settings.repo_dir):
+    if publisher is not None and published_lessons_sha(settings) != public_lessons_sha(settings):
         publisher.request()  # merged lesson changes since the last publish
 
     def upload_path(token: str) -> Path:

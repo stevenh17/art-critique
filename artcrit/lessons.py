@@ -40,11 +40,11 @@ def load_topic(lessons_dir: Path, name: str) -> str:
     return path.read_text()
 
 
-def lessons_sha(repo_dir: Path) -> str:
-    """Git tree SHA of lessons/ at HEAD, or 'uncommitted' when unavailable."""
+def lessons_sha(repo_dir: Path, ref: str = "HEAD") -> str:
+    """Git tree SHA of lessons/ at `ref`, or 'uncommitted' when unavailable."""
     try:
         out = subprocess.run(
-            ["git", "rev-parse", "HEAD:lessons"], cwd=repo_dir, capture_output=True, text=True, timeout=10
+            ["git", "rev-parse", f"{ref}:lessons"], cwd=repo_dir, capture_output=True, text=True, timeout=10
         )
     except (OSError, subprocess.TimeoutExpired):
         return "uncommitted"

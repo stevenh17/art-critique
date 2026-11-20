@@ -26,6 +26,14 @@ def build(store: SessionStore, images: ImageStore, settings: Settings) -> Path:
     return out
 
 
+def public_lessons_sha(settings: Settings) -> str:
+    """SHA of the lessons the site shows (merged on main), for the startup change check."""
+    from artcrit.lessons import lessons_sha
+    from artcrit.site.lessons_page import site_lessons_ref
+
+    return lessons_sha(settings.repo_dir, site_lessons_ref(settings.repo_dir) or "HEAD")
+
+
 def published_lessons_sha(settings: Settings) -> str | None:
     try:
         return json.loads(settings.publish_state.read_text()).get("lessons_sha")
@@ -64,11 +72,9 @@ class Publisher:
 
     def _once(self) -> None:
         try:
-            from artcrit.lessons import lessons_sha
-
             site = self.build_fn(self.store, self.images, self.settings)
             self._last = self.publish_fn(site, self.settings.repo_dir, self.settings.publish_state,
-                                         extra_state={"lessons_sha": lessons_sha(self.settings.repo_dir)})
+                                         extra_state={"lessons_sha": public_lessons_sha(self.settings)})
         except Exception as e:  # publishing is best-effort; never take the app down
             log.exception("publish failed")
             self._last = PublishResult(False, None, False, f"publish error: {e}")

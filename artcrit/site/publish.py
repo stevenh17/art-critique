@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+_NO_PROMPT = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
 FALLBACK_IDENTITY = ("-c", "user.name=artcrit", "-c", "user.email=artcrit@localhost")
 
 
@@ -49,6 +50,27 @@ def _ref(repo_dir: Path, ref: str) -> str | None:
         return None
 
 
+def _parent(repo_dir: Path, branch: str, remote: str = "origin") -> str | None:
+    """Local branch tip, or the remote's when the local branch is missing or behind (e.g. a fresh clone)."""
+    local = _ref(repo_dir, f"refs/heads/{branch}")
+    try:
+        _git(repo_dir, "remote", "get-url", remote)
+        _git(repo_dir, "fetch", "--quiet", remote, f"+refs/heads/{branch}:refs/remotes/{remote}/{branch}",
+             env=_NO_PROMPT, timeout=30)
+    except (GitError, subprocess.TimeoutExpired):
+        return local
+    upstream = _ref(repo_dir, f"refs/remotes/{remote}/{branch}")
+    if upstream is None or local == upstream:
+        return local
+    if local is None:
+        return upstream
+    try:
+        _git(repo_dir, "merge-base", "--is-ancestor", local, upstream)
+        return upstream  # local is behind: build on the remote so the push fast-forwards
+    except GitError:
+        return local
+
+
 def commit_site(site_dir: Path, repo_dir: Path, branch: str = "gh-pages") -> str | None:
     """New commit on `branch` holding exactly the files in site_dir; None if nothing changed."""
     site_dir, repo_dir = Path(site_dir).resolve(), Path(repo_dir).resolve()
@@ -56,12 +78,15 @@ def commit_site(site_dir: Path, repo_dir: Path, branch: str = "gh-pages") -> str
         env = {**os.environ, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
         _git(repo_dir, f"--work-tree={site_dir}", "add", "-A", "-f", ".", env=env)
         tree = _git(repo_dir, "write-tree", env=env)
-    parent = _ref(repo_dir, f"refs/heads/{branch}")
+    local = _ref(repo_dir, f"refs/heads/{branch}")
+    parent = _parent(repo_dir, branch)
     if parent and _git(repo_dir, "rev-parse", f"{parent}^{{tree}}") == tree:
+        if parent != local:  # nothing new, but catch the local branch up to the remote
+            _git(repo_dir, "update-ref", f"refs/heads/{branch}", parent, local or "0" * 40)
         return None
     args = ["commit-tree", tree, "-m", "Publish site"] + (["-p", parent] if parent else [])
     commit = _git(repo_dir, *_identity(repo_dir), *args)
-    _git(repo_dir, "update-ref", f"refs/heads/{branch}", commit, *([parent] if parent else []))
+    _git(repo_dir, "update-ref", f"refs/heads/{branch}", commit, *([local] if local else ["0" * 40]))
     return commit
 
 
