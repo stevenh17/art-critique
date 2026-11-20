@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: artcrit
+Version: 0.1.0
+Summary: Agentic art critique: compare a drawing to its reference photo and suggest located fixes.
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.110
+Requires-Dist: uvicorn>=0.29
+Requires-Dist: jinja2>=3.1
+Requires-Dist: python-multipart>=0.0.9
+Requires-Dist: opencv-python-headless<5.1,>=4.9
+Requires-Dist: numpy>=1.26
+Requires-Dist: pillow>=10.3
+Requires-Dist: pillow-heif>=0.16
+Requires-Dist: pydantic>=2.6
+Requires-Dist: claude-agent-sdk>=0.1
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: httpx>=0.27; extra == "dev"

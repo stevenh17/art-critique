@@ -1,0 +1,2 @@
+[console_scripts]
+artcrit = artcrit.cli:main

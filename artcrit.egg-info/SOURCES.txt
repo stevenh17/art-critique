@@ -1,0 +1,9 @@
+pyproject.toml
+artcrit/__init__.py
+artcrit.egg-info/PKG-INFO
+artcrit.egg-info/SOURCES.txt
+artcrit.egg-info/dependency_links.txt
+artcrit.egg-info/entry_points.txt
+artcrit.egg-info/requires.txt
+artcrit.egg-info/top_level.txt
+tests/test_smoke.py

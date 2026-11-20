@@ -1,0 +1,1 @@
+"""Agentic art critique."""
