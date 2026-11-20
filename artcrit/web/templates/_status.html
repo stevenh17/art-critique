@@ -1,0 +1,11 @@
+<div id="status" class="status status-{{ s.status }}"
+  {% if s.status in ("queued", "running") %}hx-get="/submissions/{{ s.id }}/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  {% if s.status == "queued" %}Waiting to start…
+  {% elif s.status == "running" %}Critiquing — comparing your drawing with the photo…
+  {% elif s.status == "limit" %}{{ s.status_detail or "Usage limit reached — retry later" }}
+  {% elif s.status == "failed" %}{{ s.status_detail or "critique failed — retry" }}
+  {% endif %}
+  {% if s.status in ("failed", "limit") %}
+  <form action="/submissions/{{ s.id }}/retry" method="post" class="inline"><button type="submit">Retry</button></form>
+  {% endif %}
+</div>

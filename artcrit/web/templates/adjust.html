@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Line things up</h1>
+<form action="/uploads/{{ token }}/submit" method="post" class="stack">
+  <section>
+    <h2>1. Drag the corners to the edges of the paper</h2>
+    <p class="hint">This flattens a phone photo so proportions aren't distorted by the camera angle.</p>
+    <div class="corner-stage" id="corner-stage">
+      <img src="/images/{{ meta.drawing }}" alt="Your drawing" id="corner-img">
+    </div>
+    <input type="hidden" name="corners" id="corners" value="{{ corners_json }}">
+  </section>
+  <section>
+    <h2>2. Drag a box on the photo around roughly what you drew</h2>
+    <div class="crop-stage" id="crop-stage">
+      <img src="/images/{{ meta.photo }}" alt="Reference photo" id="crop-img">
+      <div class="crop-box" id="crop-box"></div>
+    </div>
+    <input type="hidden" name="photo_crop" id="photo_crop" value="[0, 0, 1, 1]">
+  </section>
+  <button type="submit">Get critique</button>
+</form>
+{% endblock %}
+{% block scripts %}
+<script src="/static/corners.js"></script>
+<script src="/static/crop.js"></script>
+{% endblock %}

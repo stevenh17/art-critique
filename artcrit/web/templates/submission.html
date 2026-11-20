@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Critique #{{ s.id }}{% endblock %}
+{% block content %}
+<h1>Critique</h1>
+{% if s.status != "done" %}{% include "_status.html" %}{% endif %}
+{% if s.issues %}
+<ol class="issues">
+  {% for issue in s.issues %}<li><strong>{{ issue.title }}</strong> — {{ issue.instruction }}</li>{% endfor %}
+</ol>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>New drawing</h1>
+<form action="/uploads" method="post" enctype="multipart/form-data" class="stack">
+  <label>Your drawing (scan, phone photo of paper, or digital)
+    <input type="file" name="drawing" accept="image/*,.heic,.heif" required></label>
+  <label>Reference photo
+    <input type="file" name="photo" accept="image/*,.heic,.heif" required></label>
+  <label>Reference photo source link
+    <input type="url" name="photo_source_url" placeholder="https://unsplash.com/photos/…" required></label>
+  <label>Reference photo license
+    <input type="text" name="photo_license" placeholder="Unsplash License, CC BY 4.0 — author name, CC0…" required></label>
+  <label class="inline"><input type="checkbox" name="publish" checked> Publish this drawing to the portfolio site</label>
+  <button type="submit">Upload</button>
+</form>
+{% endblock %}
