@@ -19,15 +19,19 @@ _SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 def name_to_path(name: str) -> str:
     if name == "core":
         return f"{LESSONS}/core.md"
-    if isinstance(name, str) and name.startswith("topics/") and _SLUG.match(name[len("topics/"):]):
+    if isinstance(name, str) and name.startswith("topics/") and _SLUG.fullmatch(name[len("topics/"):]):
         return f"{LESSONS}/topics/{name[len('topics/'):]}.md"
     raise ValueError(f"invalid lesson name {name!r}; use 'core' or 'topics/<slug>' (lowercase letters, digits, dashes)")
+
+
+def is_lesson_path(path: str) -> bool:
+    return path == STATE_PATH or _path_to_name(path) is not None
 
 
 def _path_to_name(path: str) -> str | None:
     if path == f"{LESSONS}/core.md":
         return "core"
-    m = re.match(rf"^{LESSONS}/topics/([a-z0-9][a-z0-9-]{{0,40}})\.md$", path)
+    m = re.fullmatch(rf"{LESSONS}/topics/([a-z0-9][a-z0-9-]{{0,40}})\.md", path)
     return f"topics/{m.group(1)}" if m else None
 
 

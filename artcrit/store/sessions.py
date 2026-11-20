@@ -221,31 +221,35 @@ class SessionStore:
         return row["id"]
 
     # ---- read-only queries for the dreamer ----
-    def evidence_issue_rows(self, after_submission: int, after_outcome: int, after_event: int) -> list[sqlite3.Row]:
-        """Issues of done submissions that are new, or have outcomes/feedback newer than the given ids."""
+    def evidence_issue_rows(self, after_submission: int, after_outcome: int, after_event: int,
+                            upto: tuple[int, int, int] | None = None) -> list[sqlite3.Row]:
+        """Issues of done submissions that are new, or have outcomes/feedback newer than the given ids
+        (and no newer than `upto`, read before the export so rows written meanwhile wait for the next run)."""
+        us, uo, ue = upto or (2**62, 2**62, 2**62)
         with self._conn() as c:
             return c.execute(
                 "SELECT i.id, i.submission_id, i.position, i.category, i.title, i.instruction, i.lesson_refs "
                 "FROM issues i JOIN submissions s ON s.id = i.submission_id "
                 "WHERE i.critique_id = (SELECT MAX(id) FROM critiques WHERE submission_id = s.id) "
                 "AND (SELECT status FROM submission_status WHERE submission_id = s.id ORDER BY id DESC LIMIT 1) = 'done' "
-                "AND (s.id > ? OR EXISTS (SELECT 1 FROM outcomes o WHERE o.issue_id = i.id AND o.id > ?) "
-                "OR EXISTS (SELECT 1 FROM events e WHERE e.issue_id = i.id AND e.id > ? "
+                "AND s.id <= ? AND (s.id > ? OR EXISTS (SELECT 1 FROM outcomes o WHERE o.issue_id = i.id AND o.id > ? "
+                "AND o.id <= ?) OR EXISTS (SELECT 1 FROM events e WHERE e.issue_id = i.id AND e.id > ? AND e.id <= ? "
                 "AND e.type IN ('thumb_up','thumb_down','unclear','intentional','show_me'))) "
-                "ORDER BY i.submission_id, i.position", (after_submission, after_outcome, after_event)).fetchall()
+                "ORDER BY i.submission_id, i.position",
+                (us, after_submission, after_outcome, uo, after_event, ue)).fetchall()
 
-    def issue_outcomes(self, issue_id: int) -> list[sqlite3.Row]:
-        """Latest outcome per revision for one issue."""
+    def issue_outcomes(self, issue_id: int, upto: int = 2**62) -> list[sqlite3.Row]:
+        """Latest outcome per revision for one issue (ignoring rows newer than `upto`)."""
         with self._conn() as c:
             return c.execute(
                 "SELECT final_verdict, source, disagreement FROM outcomes WHERE id IN "
-                "(SELECT MAX(id) FROM outcomes WHERE issue_id = ? GROUP BY revision_submission_id) ORDER BY id",
-                (issue_id,)).fetchall()
+                "(SELECT MAX(id) FROM outcomes WHERE issue_id = ? AND id <= ? GROUP BY revision_submission_id) ORDER BY id",
+                (issue_id, upto)).fetchall()
 
-    def is_intentional(self, issue_id: int) -> bool:
+    def is_intentional(self, issue_id: int, upto: int = 2**62) -> bool:
         with self._conn() as c:
-            return c.execute("SELECT 1 FROM events WHERE issue_id = ? AND type = 'intentional'",
-                             (issue_id,)).fetchone() is not None
+            return c.execute("SELECT 1 FROM events WHERE issue_id = ? AND type = 'intentional' AND id <= ?",
+                             (issue_id, upto)).fetchone() is not None
 
     def max_ids(self) -> tuple[int, int, int]:
         """(latest done submission id, latest outcome id, latest event id)."""
@@ -279,11 +283,11 @@ class SessionStore:
             ids = [r["id"] for r in c.execute("SELECT id FROM drawings ORDER BY id")]
         return [d for d in ids if self.effective_publish(d)]
 
-    def rating_counts(self, issue_id: int) -> dict[str, int]:
+    def rating_counts(self, issue_id: int, upto: int = 2**62) -> dict[str, int]:
         keys = ("thumb_up", "thumb_down", "unclear", "show_me")
         with self._conn() as c:
-            rows = c.execute(f"SELECT type, COUNT(*) AS n FROM events WHERE issue_id = ? AND type IN "
-                             f"({','.join('?' * len(keys))}) GROUP BY type", (issue_id, *keys)).fetchall()
+            rows = c.execute(f"SELECT type, COUNT(*) AS n FROM events WHERE issue_id = ? AND id <= ? AND type IN "
+                             f"({','.join('?' * len(keys))}) GROUP BY type", (issue_id, upto, *keys)).fetchall()
         counts = {r["type"]: r["n"] for r in rows}
         return {k: counts.get(k, 0) for k in keys}
 

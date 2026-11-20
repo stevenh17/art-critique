@@ -59,8 +59,9 @@ def test_fabricated_session_fails():
 
 
 def test_sessions_already_cited_in_base_are_allowed():
-    # hands.md on main already cites s1-s4; keeping them is fine even though they're not in this export
+    # hands.md on main already cites s1-s4; keeping them is fine alongside a session from this export
     edited = HANDS.replace("A hand is about a face long.", "A hand is about a face long, wrist to fingertip.")
+    edited = edited.replace("[s1, s2, s3, s4]", "[s1, s2, s3, s4, s10]")
     assert check(ws(**{"lessons/topics/hands.md": edited})) == []
 
 
@@ -83,7 +84,7 @@ def test_urls_and_images_fail(snippet):
 
 def test_edited_seed_lesson_must_cite_a_session():
     edited = CORE.replace("Compare the same measurement", "Always compare the same measurement")
-    assert ("lessons/core.md", "seed_edit_needs_evidence") in check(ws(**{"lessons/core.md": edited}))
+    assert ("lessons/core.md", "change_needs_evidence") in check(ws(**{"lessons/core.md": edited}))
     cited = edited.replace("Evidence: seed lesson, no sessions yet.", "Evidence: seed lesson; confirmed by [s10].")
     assert check(ws(**{"lessons/core.md": cited})) == []
 

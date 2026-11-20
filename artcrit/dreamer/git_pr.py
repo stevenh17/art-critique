@@ -11,7 +11,8 @@ import tempfile
 from pathlib import Path
 
 from artcrit.dreamer.agent import DreamResult
-from artcrit.dreamer.export import Export
+from artcrit.dreamer.export import Export, Watermark
+from artcrit.dreamer.workspace import STATE_PATH, is_lesson_path
 from artcrit.site.publish import _NO_PROMPT, GitError, _identity
 
 ZERO = "0" * 40
@@ -28,6 +29,9 @@ def _git(repo_dir: Path, *args: str, env: dict | None = None, input: str | None 
 
 
 def commit_branch(repo_dir: Path, base_ref: str, files: dict[str, str | None], branch: str, message: str) -> str:
+    bad = [p for p in files if not is_lesson_path(p)]
+    if bad:
+        raise ValueError(f"refusing to commit non-lesson paths: {bad!r}")
     base = _git(repo_dir, "rev-parse", "--verify", f"{base_ref}^{{commit}}")
     with tempfile.TemporaryDirectory() as tmp:
         env = {**os.environ, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
@@ -111,12 +115,60 @@ Proposed by the dreamer agent ({result.model}). Review the wording and evidence 
 """
 
 
+def _state(repo_dir: Path, ref: str) -> Watermark:
+    try:
+        return Watermark.load(_git(repo_dir, "show", f"{ref}:{STATE_PATH}"))
+    except GitError:
+        return Watermark()
+
+
+def _covered(branch: Watermark, base: Watermark) -> bool:
+    return (branch.submission, branch.outcome, branch.event) != (0, 0, 0) and \
+        branch.submission <= base.submission and branch.outcome <= base.outcome and branch.event <= base.event
+
+
+def refresh_remote(repo_dir: Path, remote: str = "origin") -> None:
+    """Best-effort fetch of main and dreamer branches (pruning deleted ones). Never raises."""
+    try:
+        _git(repo_dir, "remote", "get-url", remote)
+        _git(repo_dir, "fetch", "--quiet", "--prune", remote, f"+refs/heads/main:refs/remotes/{remote}/main",
+             f"+refs/heads/dreamer/*:refs/remotes/{remote}/dreamer/*", env=_NO_PROMPT, timeout=30)
+    except (GitError, subprocess.TimeoutExpired):
+        pass
+
+
+def base_ref(repo_dir: Path, remote: str = "origin") -> str:
+    """origin/main when local main is behind it (e.g. a merged PR not pulled yet), else main."""
+    try:
+        local = _git(repo_dir, "rev-parse", "--verify", "refs/heads/main")
+        upstream = _git(repo_dir, "rev-parse", "--verify", f"refs/remotes/{remote}/main")
+    except GitError:
+        return "main"
+    if local != upstream:
+        try:
+            _git(repo_dir, "merge-base", "--is-ancestor", local, upstream)
+            return f"refs/remotes/{remote}/main"
+        except GitError:
+            pass
+    return "main"
+
+
 def open_dreamer_branches(repo_dir: Path, base: str = "main") -> list[str]:
-    names = _git(repo_dir, "for-each-ref", "--format=%(refname:short)", "refs/heads/dreamer/").splitlines()
+    """Dreamer branches (local, or on origin) whose evidence `base` hasn't absorbed yet.
+
+    A branch counts as merged if it is an ancestor of base (merge commit) or base's watermark already
+    covers the branch's watermark (squash or rebase merge)."""
+    local = _git(repo_dir, "for-each-ref", "--format=%(refname:short)", "refs/heads/dreamer/").splitlines()
+    remote = [r for r in _git(repo_dir, "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/dreamer/").splitlines()
+              if r.removeprefix("origin/") not in local]
+    base_state = _state(repo_dir, base)
     open_ = []
-    for b in names:
+    for b in local + remote:
         try:
             _git(repo_dir, "merge-base", "--is-ancestor", b, base)
+            continue
         except GitError:
+            pass
+        if not _covered(_state(repo_dir, b), base_state):
             open_.append(b)
     return sorted(open_)

@@ -9,7 +9,7 @@ from typing import Literal
 from artcrit.config import Settings
 from artcrit.dreamer.agent import DreamResult, dream
 from artcrit.dreamer.export import Export, Watermark, export_since, has_enough_evidence
-from artcrit.dreamer.git_pr import commit_branch, open_dreamer_branches, open_pr, pr_body, push_branch
+from artcrit.dreamer.git_pr import base_ref, commit_branch, open_dreamer_branches, open_pr, pr_body, push_branch, refresh_remote
 from artcrit.dreamer.workspace import STATE_PATH, LessonWorkspace
 from artcrit.engine.base import AgentEngine
 from artcrit.store.sessions import SessionStore
@@ -60,11 +60,13 @@ def run_dream(store: SessionStore, settings: Settings, engine: AgentEngine, *, f
         _write_report(settings, rep, result, export)
         return rep
 
-    pending = open_dreamer_branches(repo)
+    refresh_remote(repo)
+    base_rev = base_ref(repo)
+    pending = open_dreamer_branches(repo, base_rev)
     if pending and not force:
         return finish(RunReport("pending_branch", "Unmerged dreamer branch(es): " + ", ".join(pending)
                                 + ". Merge or delete them first (or pass --force)."))
-    base = LessonWorkspace.from_ref(repo, "main")
+    base = LessonWorkspace.from_ref(repo, base_rev)
     export = export_since(store, Watermark.load(base.state()))
     if not force and not has_enough_evidence(export):
         return finish(RunReport("nothing_to_learn", f"Only {len(export.records)} new issue records, too few with "
@@ -80,8 +82,8 @@ def run_dream(store: SessionStore, settings: Settings, engine: AgentEngine, *, f
         return finish(RunReport("dry_run", _diff(base, files)))
     branch = f"dreamer/{today}-{now:%H%M}"
     title = f"Dreamer: {result.summary.splitlines()[0][:72] if result.summary else 'lesson updates'}"
-    commit_branch(repo, "main", files, branch, title)
-    stat = subprocess.run(["git", "diff", "--stat", "main", branch], cwd=repo, capture_output=True, text=True).stdout
+    commit_branch(repo, base_rev, files, branch, title)
+    stat = subprocess.run(["git", "diff", "--stat", base_rev, branch], cwd=repo, capture_output=True, text=True).stdout
     link = None
     detail = f"Created branch {branch}."
     if push:

@@ -7,6 +7,8 @@ from artcrit.dreamer.export import Export
 from artcrit.dreamer.workspace import LessonWorkspace
 
 MAX_CORE_WORDS = 1500
+MIN_CORE_LESSONS = 1
+REMOVAL_ACTIONS = ("retire", "merge", "rewrite")
 MIN_NEW_LESSON_SESSIONS = 3
 OVERLAP_WORDS = 8
 _DATE_LINE = re.compile(r"^- (Added|Strengthened|Rewritten|Merged) \d{4}-\d{2}-\d{2}")
@@ -73,9 +75,17 @@ def _ngrams(words: list[str], n: int) -> set[tuple[str, ...]]:
     return {tuple(words[i:i + n]) for i in range(len(words) - n + 1)}
 
 
-def run_checks(new: LessonWorkspace, base: LessonWorkspace, export: Export, all_user_texts: list[str]) -> list[CheckFailure]:
+def _declared_removal(heading: str, changes: list[dict], fresh: set[str]) -> bool:
+    h = heading.lower()
+    return any(c.get("action") in REMOVAL_ACTIONS and set(c.get("sessions") or []) & fresh
+               and (h in str(c.get("lesson", "")).lower() or h in str(c.get("reason", "")).lower()) for c in changes)
+
+
+def run_checks(new: LessonWorkspace, base: LessonWorkspace, export: Export, all_user_texts: list[str],
+               changes: list[dict] | None = None) -> list[CheckFailure]:
     failures: list[CheckFailure] = []
-    allowed = {r.session for r in export.records}
+    fresh = {r.session for r in export.records}  # this run's evidence
+    allowed = set(fresh)
     for text in base.files.values():
         allowed |= _sessions(text)
     user_grams = set().union(*(_ngrams(_words(t), OVERLAP_WORDS) for t in all_user_texts)) if all_user_texts else set()
@@ -90,6 +100,12 @@ def run_checks(new: LessonWorkspace, base: LessonWorkspace, export: Export, all_
             fail("core_size", f"core.md has {len(text.split())} words; limit {MAX_CORE_WORDS}")
         sections = _sections(text)
         base_sections = _sections(base.files.get(path, ""))
+        if path.endswith("/core.md") and len(sections) < MIN_CORE_LESSONS:
+            fail("core_minimum", f"core.md must keep at least {MIN_CORE_LESSONS} lesson(s)")
+        for heading in base_sections.keys() - sections.keys():
+            if not _declared_removal(heading, changes or [], fresh):
+                fail("removal_needs_evidence", f"lesson '{heading}' was removed without a retire/merge/rewrite "
+                     "change in finish that names it and cites this run's evidence")
         for heading, body in sections.items():
             cited = set().union(*(_sessions(line) for line in _evidence(body))) if _evidence(body) else set()
             unknown = sorted(cited - allowed)
@@ -98,8 +114,8 @@ def run_checks(new: LessonWorkspace, base: LessonWorkspace, export: Export, all_
             if heading not in base_sections and len(cited) < MIN_NEW_LESSON_SESSIONS:
                 fail("new_lesson_support", f"new lesson '{heading}' cites {len(cited)} sessions; needs {MIN_NEW_LESSON_SESSIONS}")
             old = base_sections.get(heading)
-            if old is not None and _content(old) != _content(body) and any("seed lesson" in line for line in _evidence(old)) and not cited:
-                fail("seed_edit_needs_evidence", f"seed lesson '{heading}' was changed without citing any session")
+            if old is not None and _content(old) != _content(body) and not cited & fresh:
+                fail("change_needs_evidence", f"lesson '{heading}' was changed without citing a session from this run's evidence")
         if user_grams and _ngrams(_words(text), OVERLAP_WORDS) & user_grams:
             fail("no_user_text", f"contains {OVERLAP_WORDS}+ words copied from text a user typed")
         if _URLISH.search(text):

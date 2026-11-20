@@ -32,7 +32,7 @@ def list_topics(lessons_dir: Path) -> list[TopicInfo]:
 
 
 def load_topic(lessons_dir: Path, name: str) -> str:
-    if not _NAME.match(name or ""):
+    if not _NAME.fullmatch(name or ""):
         raise KeyError(name)
     path = Path(lessons_dir) / "topics" / f"{name}.md"
     if not path.is_file():

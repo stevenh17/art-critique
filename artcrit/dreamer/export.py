@@ -45,14 +45,16 @@ class Export:
 
 
 def export_since(store: SessionStore, wm: Watermark) -> Export:
-    records = []
-    for r in store.evidence_issue_rows(wm.submission, wm.outcome, wm.event):
-        outcomes = [{"verdict": o["final_verdict"], "measured": o["source"].startswith("geometry"),
-                     "disagreement": bool(o["disagreement"])} for o in store.issue_outcomes(r["id"])]
-        records.append(EvidenceRecord(f"s{r['submission_id']}", r["position"], r["category"], r["title"],
-                                      r["instruction"], json.loads(r["lesson_refs"]), store.rating_counts(r["id"]),
-                                      store.is_intentional(r["id"]), outcomes))
+    # Read the high-water marks first and bound every query by them: rows the app writes while we export
+    # are left for the next run instead of being skipped or half-counted.
     sub, out, ev = store.max_ids()
+    records = []
+    for r in store.evidence_issue_rows(wm.submission, wm.outcome, wm.event, upto=(sub, out, ev)):
+        outcomes = [{"verdict": o["final_verdict"], "measured": o["source"].startswith("geometry"),
+                     "disagreement": bool(o["disagreement"])} for o in store.issue_outcomes(r["id"], out)]
+        records.append(EvidenceRecord(f"s{r['submission_id']}", r["position"], r["category"], r["title"],
+                                      r["instruction"], json.loads(r["lesson_refs"]), store.rating_counts(r["id"], ev),
+                                      store.is_intentional(r["id"], ev), outcomes))
     new = Watermark(max(sub, wm.submission), max(out, wm.outcome), max(ev, wm.event))
     return Export(records, new, store.user_texts())
 

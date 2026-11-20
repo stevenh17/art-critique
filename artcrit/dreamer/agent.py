@@ -24,6 +24,9 @@ Never make advice more flattering or softer to win ratings; accuracy helps more 
 
 What you may do: strengthen, rewrite, merge or retire lessons, or add a new lesson. Add a new lesson only when
 at least {min_sessions} sessions support it. If the evidence does not clearly support a change, change nothing.
+Any lesson you change must cite at least one session from this evidence in its Evidence line. To retire or merge
+a lesson away, remove its section and list it in finish with action "retire" or "merge", naming its heading and
+citing the sessions from this evidence that justify it.
 
 Lesson file format (keep it exactly):
 # Title
@@ -82,11 +85,9 @@ def dream(export: Export, base: LessonWorkspace, engine: AgentEngine, all_user_t
         sink = {}
         result = engine.run(system, _prompt(export, failures), [], make_tools(ws, sink), MAX_TURNS)
         model = result.model
-        failures = run_checks(ws, base, export, all_user_texts)
+        failures = run_checks(ws, base, export, all_user_texts, (sink.get("finish") or {}).get("changes"))
         if not failures:
             break
-        if attempt == 0:
-            ws = ws.copy()  # the retry continues from the first attempt's edits
     finished = sink.get("finish")
     if finished is None:
         return DreamResult(False, ws, "The agent did not call finish.", [], failures, model)
