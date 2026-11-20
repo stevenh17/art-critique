@@ -74,3 +74,9 @@ def test_overlay_toggle_and_slider_present(done):
     client, url, _, _ = done
     page = client.get(url).text
     assert 'id="overlay-toggle"' in page and 'type="range"' in page
+
+
+def test_hidden_attribute_wins_over_display_rules(done):
+    client, _, _, _ = done
+    css = client.get("/static/app.css").text
+    assert re.search(r"\[hidden\]\s*\{\s*display:\s*none\s*!important", css)

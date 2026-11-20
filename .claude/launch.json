@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "artcrit",
+      "runtimeExecutable": ".venv/bin/artcrit",
+      "runtimeArgs": ["serve"],
+      "port": 8000
+    }
+  ]
+}
