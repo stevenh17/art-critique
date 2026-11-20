@@ -66,6 +66,29 @@ def grid_overlay(img: np.ndarray) -> np.ndarray:
     return out
 
 
+MODEL_MAX_SIDE = 1568
+MODEL_MAX_B64 = 3_500_000  # stays under the API's per-image limit with headroom
+
+
+def fit(img: np.ndarray, max_side: int = MODEL_MAX_SIDE) -> np.ndarray:
+    """Downscale so the long side is at most max_side (never upscales)."""
+    h, w = img.shape[:2]
+    scale = max_side / max(h, w)
+    if scale >= 1:
+        return img
+    return cv2.resize(img, (max(1, round(w * scale)), max(1, round(h * scale))), interpolation=cv2.INTER_AREA)
+
+
+def model_png_b64(img: np.ndarray, max_side: int = MODEL_MAX_SIDE, max_b64: int = MODEL_MAX_B64) -> str:
+    """PNG base64 sized for the model: long side ≤ max_side and encoded size ≤ max_b64."""
+    img = fit(img, max_side)
+    b64 = to_png_b64(img)
+    while len(b64) > max_b64:
+        img = fit(img, int(max(img.shape[:2]) * 0.8))
+        b64 = to_png_b64(img)
+    return b64
+
+
 def to_png_b64(img: np.ndarray) -> str:
     ok, buf = cv2.imencode(".png", img)
     if not ok:

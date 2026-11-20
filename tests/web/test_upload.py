@@ -40,7 +40,7 @@ def test_missing_license_is_422(make_client):
 def test_unreadable_image_is_422(make_client):
     client, _, _ = make_client([])
     r = client.post("/uploads", files={"drawing": ("d.png", b"junk", "image/png"), "photo": ("p.png", png_bytes(), "image/png")},
-                    data={"photo_source_url": "u", "photo_license": "CC0"}, follow_redirects=False)
+                    data={"photo_source_url": "https://example.org/p", "photo_license": "CC0"}, follow_redirects=False)
     assert r.status_code == 422 and "image" in r.text.lower()
 
 
@@ -77,3 +77,19 @@ def test_image_route_blocks_traversal(make_client):
     client, _, _ = make_client([])
     assert client.get("/images/../../pyproject.toml").status_code == 404
     assert client.get("/images/%2e%2e/%2e%2e/pyproject.toml").status_code == 404
+
+
+def test_non_http_source_url_is_422(make_client):
+    client, _, _ = make_client([])
+    r = client.post("/uploads", files={"drawing": ("d.png", png_bytes(), "image/png"), "photo": ("p.png", png_bytes(), "image/png")},
+                    data={"photo_source_url": "javascript:alert(1)", "photo_license": "CC0"}, follow_redirects=False)
+    assert r.status_code == 422
+
+
+def test_degenerate_corners_are_422_not_500(make_client):
+    import json
+
+    client, _, _ = make_client([])
+    base = upload(client).headers["location"].rsplit("/adjust", 1)[0]
+    r = client.post(f"{base}/submit", data={"corners": json.dumps([[5, 5]] * 4), "photo_crop": "[0,0,1,1]"})
+    assert r.status_code == 422

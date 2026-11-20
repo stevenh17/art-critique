@@ -25,6 +25,10 @@ class UsageLimitError(Exception):
     """The Claude plan's usage limit was reached; retry later."""
 
 
+class EngineError(Exception):
+    """The engine failed for a reason other than a usage limit (auth, API error, oversize request...)."""
+
+
 class AgentEngine(Protocol):
     def run(
         self, system: str, prompt_text: str, images: list[str], tools: list[ToolSpec], max_turns: int

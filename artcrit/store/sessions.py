@@ -162,6 +162,14 @@ class SessionStore:
                 self._issue_views(c, submission_id),
             )
 
+    def unfinished_submissions(self) -> list[int]:
+        """Submissions whose latest status is queued or running."""
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT submission_id, status FROM submission_status WHERE id IN "
+                "(SELECT MAX(id) FROM submission_status GROUP BY submission_id)").fetchall()
+        return [r["submission_id"] for r in rows if r["status"] in ("queued", "running")]
+
     def intentional_boxes(self, drawing_id: int) -> list[Box]:
         with self._conn() as c:
             rows = c.execute(

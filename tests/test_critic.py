@@ -136,7 +136,7 @@ def test_max_turns_allows_eight_tool_calls_plus_answer(lessons_dir):
     eng = FakeEngine([_answer()])
     critique(DRAWING, PHOTO, lessons_dir, eng)
     assert MAX_TOOL_CALLS == 8
-    assert eng.calls[0]["max_turns"] == MAX_TOOL_CALLS + 1
+    assert eng.calls[0]["max_turns"] > MAX_TOOL_CALLS
 
 
 def test_usage_limit_propagates(lessons_dir):

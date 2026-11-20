@@ -2,6 +2,7 @@
 
 import json
 import secrets
+from urllib.parse import urlparse
 import threading
 from pathlib import Path
 from typing import Callable
@@ -13,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 
 from artcrit.config import Settings
 from artcrit.engine.base import AgentEngine
-from artcrit.imaging.deskew import find_paper, full_corners, normalize, warp
+from artcrit.imaging.deskew import find_paper, full_corners, normalize, validate_corners, warp
 from artcrit.imaging.load import UnsupportedImageError, load_image
 from artcrit.imaging.regions import crop, zoom
 from artcrit.store.images import ImageStore
@@ -56,6 +57,8 @@ def create_app(settings: Settings, engine: AgentEngine,
     templates = Jinja2Templates(directory=HERE / "templates")
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     app.state.store, app.state.images, app.state.templates = store, images, templates
+    for sid in store.unfinished_submissions():  # a previous server stopped mid-critique
+        store.add_status(sid, "failed", "interrupted — retry")
 
     def upload_path(token: str) -> Path:
         if not token.isalnum():
@@ -88,6 +91,8 @@ def create_app(settings: Settings, engine: AgentEngine,
                             publish: str | None = Form(None)):
         if not photo_license.strip() or not photo_source_url.strip():
             raise HTTPException(422, "reference photo source and license are required")
+        if urlparse(photo_source_url.strip()).scheme not in ("http", "https"):
+            raise HTTPException(422, "reference photo source must be an http(s) link")
         try:
             d_img, p_img = load_image(await drawing.read()), load_image(await photo.read())
         except UnsupportedImageError as e:
@@ -114,7 +119,12 @@ def create_app(settings: Settings, engine: AgentEngine,
     def submit(token: str, corners: str = Form(...), photo_crop: str = Form(...)):
         meta = load_upload(token)
         pts, box = _parse_corners(corners), _parse_box(photo_crop)
-        normalized = normalize(warp(images.load(meta["drawing"]), pts))
+        original = images.load(meta["drawing"])
+        try:
+            pts = validate_corners(pts, original.shape)
+        except ValueError as e:
+            raise HTTPException(422, f"Corners: {e}")
+        normalized = normalize(warp(original, pts))
         drawing_id = store.add_drawing(meta["photo"], box, meta["photo_source_url"], meta["photo_license"], meta["publish"])
         sid = store.add_submission(drawing_id, 1, None, meta["drawing"], images.save(normalized, "drawing"), pts)
         start(sid)

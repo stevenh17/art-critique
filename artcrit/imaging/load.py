@@ -22,7 +22,11 @@ def load_image(data: bytes) -> np.ndarray:
     try:
         img = Image.open(io.BytesIO(data))
         img = ImageOps.exif_transpose(img)
+        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            rgba = img.convert("RGBA")
+            white = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+            img = Image.alpha_composite(white, rgba)
         rgb = np.asarray(img.convert("RGB"))
-    except (UnidentifiedImageError, OSError, ValueError) as e:
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as e:
         raise UnsupportedImageError(f"Unsupported or corrupt image: {e}") from e
     return np.ascontiguousarray(rgb[:, :, ::-1])

@@ -10,8 +10,8 @@ Corners = tuple[tuple[float, float], ...]  # 4 points (x, y) in pixels: TL, TR, 
 MIN_PAPER_AREA_FRACTION = 0.20
 
 
-def _order(pts: np.ndarray) -> Corners:
-    pts = pts.reshape(4, 2).astype(float)
+def order_corners(pts) -> Corners:
+    pts = np.asarray(pts, dtype=float).reshape(4, 2)
     s = pts.sum(axis=1)
     d = pts[:, 1] - pts[:, 0]
     tl, br = pts[np.argmin(s)], pts[np.argmax(s)]
@@ -34,8 +34,26 @@ def find_paper(img: np.ndarray) -> Corners | None:
             return None
         approx = cv2.approxPolyDP(c, 0.02 * cv2.arcLength(c, True), True)
         if len(approx) == 4 and cv2.isContourConvex(approx):
-            return _order(approx)
+            return order_corners(approx)
     return None
+
+
+MIN_CORNER_AREA_FRACTION = 0.05
+
+
+def validate_corners(corners, shape) -> Corners:
+    """Clamp to the image, re-order TL TR BR BL, and reject collapsed or non-convex quads (ValueError)."""
+    h, w = shape[:2]
+    pts = np.array([(min(max(float(x), 0.0), w - 1.0), min(max(float(y), 0.0), h - 1.0)) for x, y in corners])
+    if pts.shape != (4, 2):
+        raise ValueError("need exactly four corners")
+    ordered = order_corners(pts)
+    quad = np.array(ordered, np.float32)
+    if len({tuple(p) for p in ordered}) < 4 or not cv2.isContourConvex(quad):
+        raise ValueError("the corners must form a four-sided shape around the paper")
+    if cv2.contourArea(quad) < MIN_CORNER_AREA_FRACTION * w * h:
+        raise ValueError("the corners enclose too little of the image")
+    return ordered
 
 
 def full_corners(img: np.ndarray) -> Corners:

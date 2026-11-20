@@ -18,7 +18,7 @@ from claude_agent_sdk import (
 )
 from claude_agent_sdk._errors import ResultError
 
-from artcrit.engine.base import AgentResult, ToolSpec, UsageLimitError
+from artcrit.engine.base import AgentResult, EngineError, ToolSpec, UsageLimitError
 
 SERVER = "critic"
 
@@ -63,24 +63,33 @@ class ClaudeSDKEngine:
         async def prompt():
             yield {"type": "user", "message": {"role": "user", "content": content}}
 
-        last_text, trace, model = "", [], "unknown"
+        last_text, trace, model, failure = "", [], "unknown", None
         try:
             async for msg in query(prompt=prompt(), options=opts):
                 if isinstance(msg, RateLimitEvent) and msg.rate_limit_info.status == "rejected":
                     raise UsageLimitError(str(msg.rate_limit_info.rate_limit_type))
                 if isinstance(msg, AssistantMessage):
                     model = msg.model or model
-                    if msg.error == "rate_limit":
-                        raise UsageLimitError("rate_limit")
+                    if msg.error in ("rate_limit", "billing_error"):
+                        raise UsageLimitError(msg.error)
                     texts = [b.text for b in msg.content if isinstance(b, TextBlock)]
                     if texts:
                         last_text = "\n".join(texts)
                     trace += [{"tool": b.name.removeprefix(f"mcp__{SERVER}__"), "input": b.input}
                               for b in msg.content if isinstance(b, ToolUseBlock)]
-                if isinstance(msg, ResultMessage) and msg.result:
-                    last_text = msg.result
-        except ResultError:
-            pass  # e.g. turn cap reached; whatever text we have goes to the parser
+                if isinstance(msg, ResultMessage):
+                    if msg.is_error:
+                        failure = msg
+                    elif msg.result:
+                        last_text = msg.result
+        except ResultError as e:
+            if e.subtype == "error_max_turns" or e.terminal_reason == "max_turns":
+                return AgentResult(last_text, trace, model)  # parser decides; critic retries once
+            if e.api_error_status == 429:
+                raise UsageLimitError("rate_limit") from e
+            raise EngineError(e.result or "; ".join(e.errors) or str(e)) from e
+        if failure is not None and failure.subtype != "error_max_turns":
+            raise EngineError(failure.result or "; ".join(failure.errors or []) or failure.subtype)
         return AgentResult(last_text, trace, model)
 
 

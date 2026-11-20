@@ -8,10 +8,12 @@ import numpy as np
 
 from artcrit.critique_schema import CRITIQUE_JSON_INSTRUCTIONS, Critique, CritiqueFormatError, parse_critique
 from artcrit.engine.base import AgentEngine, ToolSpec
-from artcrit.imaging.regions import COLS, GRID_N, Box, cells_to_box, grid_overlay, to_png_b64, zoom
+from artcrit.imaging.regions import COLS, GRID_N, Box, cells_to_box, fit, grid_overlay, model_png_b64, zoom
 from artcrit.lessons import lessons_sha, list_topics, load_core, load_topic
 
 MAX_TOOL_CALLS = 8
+MAX_TURNS = MAX_TOOL_CALLS + 4  # backstop only; the budget is enforced inside the tools
+BUDGET_USED = "Tool budget used — give your final JSON answer now."
 _IMAGE_PARAM = {"type": "string", "enum": ["drawing", "photo"], "description": "Which image to use."}
 
 
@@ -60,20 +62,33 @@ def _prompt_text(intentional: list[Box], retry_error: str | None) -> str:
     return "\n".join(parts)
 
 
+def _budgeted(handler, used: list[int]):
+    def wrapped(args: dict):
+        if used[0] >= MAX_TOOL_CALLS:
+            return [{"type": "text", "text": BUDGET_USED}]
+        used[0] += 1
+        return handler(args)
+
+    return wrapped
+
+
 def _make_tools(images: dict[str, np.ndarray], lessons_dir: Path) -> list[ToolSpec]:
+    """Tools share one call budget. `images` are full resolution; everything sent back is size-bounded."""
+    used = [0]
+
     def zoom_tool(args: dict):
         try:
             box = cells_to_box(args.get("cells") or [])
             img = images[args["image"]]
         except (ValueError, KeyError) as e:
             return [{"type": "text", "text": f"Error: {e}. Use image 'drawing' or 'photo' and cells A1-H8."}]
-        return [{"type": "image", "png_b64": to_png_b64(zoom(img, box))}]
+        return [{"type": "image", "png_b64": model_png_b64(zoom(img, box))}]
 
     def grid_tool(args: dict):
         img = images.get(args.get("image", ""))
         if img is None:
             return [{"type": "text", "text": "Error: image must be 'drawing' or 'photo'."}]
-        return [{"type": "image", "png_b64": to_png_b64(grid_overlay(img))}]
+        return [{"type": "image", "png_b64": model_png_b64(grid_overlay(fit(img)))}]
 
     def lesson_tool(args: dict):
         try:
@@ -86,11 +101,11 @@ def _make_tools(images: dict[str, np.ndarray], lessons_dir: Path) -> list[ToolSp
         ToolSpec("zoom", "Zoom into grid cells of the drawing or photo.",
                  {"type": "object", "properties": {"image": _IMAGE_PARAM,
                   "cells": {"type": "array", "items": {"type": "string"}, "description": "Grid cells, e.g. ['C6','D6']."}},
-                  "required": ["image", "cells"]}, zoom_tool),
+                  "required": ["image", "cells"]}, _budgeted(zoom_tool, used)),
         ToolSpec("grid_overlay", "Show the drawing or photo with the labeled A1-H8 grid drawn on it.",
-                 {"type": "object", "properties": {"image": _IMAGE_PARAM}, "required": ["image"]}, grid_tool),
+                 {"type": "object", "properties": {"image": _IMAGE_PARAM}, "required": ["image"]}, _budgeted(grid_tool, used)),
         ToolSpec("load_lesson", "Load a topic lesson by name.",
-                 {"type": "object", "properties": {"topic": {"type": "string"}}, "required": ["topic"]}, lesson_tool),
+                 {"type": "object", "properties": {"topic": {"type": "string"}}, "required": ["topic"]}, _budgeted(lesson_tool, used)),
     ]
 
 
@@ -103,12 +118,12 @@ def critique(
     repo_dir: Path | None = None,
 ) -> CritiqueRun:
     lessons_dir = Path(lessons_dir)
-    tools = _make_tools({"drawing": drawing, "photo": photo}, lessons_dir)
     system = _system_prompt(lessons_dir)
-    images = [to_png_b64(drawing), to_png_b64(photo)]
+    images = [model_png_b64(drawing), model_png_b64(photo)]
     error: str | None = None
     for _attempt in range(2):
-        result = engine.run(system, _prompt_text(intentional or [], error), images, tools, MAX_TOOL_CALLS + 1)
+        tools = _make_tools({"drawing": drawing, "photo": photo}, lessons_dir)  # fresh budget per run
+        result = engine.run(system, _prompt_text(intentional or [], error), images, tools, MAX_TURNS)
         try:
             parsed = parse_critique(result.text)
         except CritiqueFormatError as e:

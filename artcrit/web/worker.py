@@ -5,7 +5,7 @@ import logging
 from artcrit.config import Settings
 from artcrit.critic import critique
 from artcrit.critique_schema import CritiqueFormatError
-from artcrit.engine.base import AgentEngine, UsageLimitError
+from artcrit.engine.base import AgentEngine, EngineError, UsageLimitError
 from artcrit.imaging.regions import crop
 from artcrit.store.images import ImageStore
 from artcrit.store.sessions import SessionStore
@@ -27,6 +27,9 @@ def run_critique(submission_id: int, store: SessionStore, images: ImageStore, en
                        intentional=store.intentional_boxes(sub.drawing_id), repo_dir=settings.repo_dir)
     except UsageLimitError as e:
         store.add_status(submission_id, "limit", f"{LIMIT_MESSAGE} ({e})")
+        return
+    except EngineError as e:
+        store.add_status(submission_id, "failed", f"{FAILED_MESSAGE} ({e})"[:500])
         return
     except CritiqueFormatError:
         store.add_status(submission_id, "failed", FAILED_MESSAGE)
