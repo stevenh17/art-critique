@@ -137,6 +137,18 @@ def create_app(settings: Settings, engine: AgentEngine,
             raise HTTPException(404, "drawing not found")
         return sid
 
+    @app.post("/drawings/{drawing_id}/publish")
+    def toggle_publish(request: Request, drawing_id: int, publish: str = Form(...)):
+        latest = latest_or_404(drawing_id)
+        if publish not in ("on", "off"):
+            raise HTTPException(422, "publish must be 'on' or 'off'")
+        store.add_event("publish_toggle", payload={"publish": publish == "on", "drawing_id": drawing_id})
+        if publisher is not None:
+            publisher.request()
+        back = request.headers.get("referer", "")
+        target = urlparse(back).path if urlparse(back).path.startswith("/submissions/") else f"/submissions/{latest}"
+        return RedirectResponse(target, status_code=303)
+
     @app.get("/drawings/{drawing_id}/revise", response_class=HTMLResponse)
     def revise_form(request: Request, drawing_id: int):
         latest_or_404(drawing_id)
@@ -195,6 +207,7 @@ def create_app(settings: Settings, engine: AgentEngine,
     def submission(request: Request, submission_id: int):
         view = get_view(submission_id)
         ctx = {"s": view, "versions": store.versions(view.drawing_id), "prev": None, "outcomes": [], "closeness": None,
+               "published": store.effective_publish(view.drawing_id),
                "overlay_kind": overlay_for(view)[1] if view.issues else None}
         if view.parent_id is not None:
             ctx["prev"] = store.get_submission(view.parent_id)

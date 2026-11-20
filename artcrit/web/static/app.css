@@ -71,3 +71,4 @@ a.button { display: inline-block; padding: 8px 14px; border-radius: 6px; backgro
 .outcome .verdict, .outcome .how { flex: none; }
 @media (max-width: 700px) { .outcome { flex-wrap: wrap; } .outcome-title { flex-basis: calc(100% - 34px); } }
 .app-footer { max-width: 1100px; margin: 24px auto 0; padding: 12px 20px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); }
+.publish-state { display: flex; gap: 10px; align-items: center; color: var(--muted); font-size: 14px; margin: -4px 0 12px; }
