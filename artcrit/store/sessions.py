@@ -220,6 +220,15 @@ class SessionStore:
             row = c.execute("SELECT MAX(id) AS id FROM submissions WHERE drawing_id = ?", (drawing_id,)).fetchone()
         return row["id"]
 
+    def latest_done_submission(self, drawing_id: int) -> int | None:
+        """Newest version whose latest status is 'done' — the one a revision should be checked against."""
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT s.id, st.status FROM submissions s JOIN submission_status st ON st.submission_id = s.id "
+                "WHERE s.drawing_id = ? AND st.id IN (SELECT MAX(id) FROM submission_status GROUP BY submission_id) "
+                "ORDER BY s.id DESC", (drawing_id,)).fetchall()
+        return next((r["id"] for r in rows if r["status"] == "done"), None)
+
     def versions(self, drawing_id: int) -> list[tuple[int, int]]:
         with self._conn() as c:
             rows = c.execute("SELECT id, version FROM submissions WHERE drawing_id = ? ORDER BY version",

@@ -6,6 +6,7 @@ import numpy as np
 from artcrit.imaging.regions import Box
 from artcrit.outcomes import GeometryMeasure
 
+POINTS_NOISE = 0.05  # typical click imprecision, as a fraction of eye-to-eye distance
 POINT_NAMES = ("left eye outer corner", "right eye outer corner", "nose tip", "chin", "hairline centre", "mouth centre")
 
 
@@ -30,4 +31,4 @@ def measure_from_points(issue_box: Box, old_px: np.ndarray, new_px: np.ndarray, 
         sel = np.ones(len(norm), bool)
     old = float(points_error(old_px, photo_px)[sel].mean())
     new = float(points_error(new_px, photo_px)[sel].mean())
-    return GeometryMeasure("points", old, new, True)
+    return GeometryMeasure("points", old, new, old > POINTS_NOISE)

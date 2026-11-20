@@ -37,7 +37,7 @@ def test_measure_page_has_three_images(make_client):
 def test_measure_post_appends_outcome_and_overrides(make_client):
     client, url, view, issue1, app = judged_revision(make_client)
     old = [p[:] for p in SIX]
-    old[3] = [0.5, 0.98]  # chin too low before
+    old[3] = [0.45, 0.8]  # chin misplaced before (inside the issue box C7–D7)
     r = client.post(f"{url}/measure", data={"issue_id": issue1, "points": json.dumps({"photo": SIX, "old": old, "new": SIX})},
                     follow_redirects=False)
     assert r.status_code == 303

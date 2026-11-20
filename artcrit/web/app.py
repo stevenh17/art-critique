@@ -170,7 +170,8 @@ def create_app(settings: Settings, engine: AgentEngine,
                                            meta["photo_license"], meta["publish"])
             version, parent = 1, None
         else:
-            drawing_id, parent = revision_of, latest_or_404(revision_of)
+            drawing_id = revision_of
+            parent = store.latest_done_submission(drawing_id) or latest_or_404(drawing_id)
             version = max(v for _, v in store.versions(drawing_id)) + 1
         sid = store.add_submission(drawing_id, version, parent, meta["drawing"], normalized, pts)
         start(sid)

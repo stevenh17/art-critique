@@ -16,6 +16,7 @@ class Comp:
     available: bool
     region: float | None
     overall: float | None
+    sim: object = None  # no alignment: map_box keeps the box as-is
 
     def region_distance(self, box):
         return self.region

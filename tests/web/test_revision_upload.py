@@ -61,3 +61,18 @@ def test_done_page_links_to_revise_and_versions(make_client):
     page = client.get(f"/submissions/{s1}").text
     assert f'href="/drawings/{d}/revise"' in page
     assert f'href="/submissions/{s1}"' in page and "v1" in page
+
+
+def test_revision_parent_is_last_done_version(make_client):
+    client, _, app = make_client([answer(), answer("bad"), answer("bad"), answer()])
+    s1 = first_version(client)
+    d = app.state.store.get_submission(s1).drawing_id
+    adjust = upload_revision(client, d).headers["location"]
+    s2 = int(client.post(adjust.rsplit("/adjust", 1)[0] + "/submit", data={"corners": CORNERS},
+                         follow_redirects=False).headers["location"].rsplit("/", 1)[1])
+    assert app.state.store.get_submission(s2).status == "failed"
+    adjust = upload_revision(client, d).headers["location"]
+    s3 = int(client.post(adjust.rsplit("/adjust", 1)[0] + "/submit", data={"corners": CORNERS},
+                         follow_redirects=False).headers["location"].rsplit("/", 1)[1])
+    v3 = app.state.store.get_submission(s3)
+    assert v3.parent_id == s1 and v3.version == 3

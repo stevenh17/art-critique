@@ -10,7 +10,7 @@ import numpy as np
 
 from artcrit.engine.base import AgentEngine
 from artcrit.geometry.landmarks import RATIO_FEATURES
-from artcrit.geometry.service import Geometry
+from artcrit.geometry.service import Geometry, map_box
 from artcrit.imaging.regions import Box, crop, zoom
 from artcrit.judge import JudgeResult, Verdict, judge_issue
 from artcrit.store.images import ImageStore
@@ -61,7 +61,7 @@ def _in_box(pt: np.ndarray, box: Box) -> bool:
     return box[0] <= pt[0] <= box[2] and box[1] <= pt[1] <= box[3]
 
 
-def measure_issue(issue_box: Box, old, new, old_faces, new_faces) -> GeometryMeasure | None:
+def measure_issue(issue_box: Box, old, new, old_faces, new_faces, new_box: Box | None = None) -> GeometryMeasure | None:
     """Landmarks when the issue is about one or two specific facial features and both versions have
     confident faces; otherwise outline distance in the region (e.g. whole-head shape issues)."""
     keys = []
@@ -74,10 +74,11 @@ def measure_issue(issue_box: Box, old, new, old_faces, new_faces) -> GeometryMea
         return GeometryMeasure("landmarks", o, n, o > NOISE_FLOOR)
     if not (old.available and new.available):
         return None
-    o, n = old.region_distance(issue_box), new.region_distance(issue_box)
+    o, n = old.region_distance(issue_box), new.region_distance(new_box or issue_box)
     if o is None or n is None:
         return None
-    return GeometryMeasure("outline", o, n, o > NOISE_FLOOR)
+    # An unchanged silhouette can't tell us about interior changes (e.g. moved eyes): leave it to the judge.
+    return GeometryMeasure("outline", o, n, o > NOISE_FLOOR and abs(o - n) > NOISE_FLOOR)
 
 
 def final_verdict(category: str, judge: JudgeResult, geo: GeometryMeasure | None) -> tuple[Verdict, str, bool]:
@@ -103,9 +104,10 @@ def evaluate_revision(prev: SubmissionView, new: SubmissionView, images: ImageSt
         faces = (geometry.faces(old_d, photo), geometry.faces(new_d, photo))
     rows = []
     for issue in issues:
+        new_box = map_box(issue.drawing_box, *comps) if comps else issue.drawing_box
         judged = judge_issue(issue.category, issue.title, issue.instruction, zoom(old_d, issue.drawing_box),
-                             zoom(new_d, issue.drawing_box), zoom(photo, issue.photo_box), engine)
-        geo = measure_issue(issue.drawing_box, *comps, *faces) if comps else None
+                             zoom(new_d, new_box), zoom(photo, issue.photo_box), engine)
+        geo = measure_issue(issue.drawing_box, *comps, *faces, new_box=new_box) if comps else None
         verdict, source, disagree = final_verdict(issue.category, judged, geo)
         rows.append(OutcomeRow(issue.id, new.id, judged.verdict, judged.reason,
                                json.dumps(asdict(geo) if geo else {"unavailable": True}), verdict, source, disagree))

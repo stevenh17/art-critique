@@ -1,5 +1,7 @@
 """One place that measures a drawing against its reference: outlines and faces, cached per pair."""
 
+import hashlib
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -21,6 +23,22 @@ from artcrit.imaging.regions import Box, fit
 
 WORK_SIDE = 800  # geometry runs on downscaled copies; results map back to full resolution
 MIN_REGION_POINTS = 10
+CACHE_SIZE = 16  # results only (never images), keyed by pixel content
+
+
+def _digest(img: np.ndarray) -> str:
+    return hashlib.blake2b(np.ascontiguousarray(img).data, digest_size=16).hexdigest() + str(img.shape)
+
+
+class _LRU(OrderedDict):
+    def get_or(self, key, make):
+        if key in self:
+            self.move_to_end(key)
+            return self[key]
+        value = self[key] = make()
+        while len(self) > CACHE_SIZE:
+            self.popitem(last=False)
+        return value
 
 
 @dataclass
@@ -55,6 +73,21 @@ class Comparison:
         return (from_work @ m @ to_work)[:2]
 
 
+def map_box(box: Box, old: Comparison, new: Comparison) -> Box:
+    """Carry a box on the old drawing to the matching place on the new drawing, via the photo.
+    Returns the box unchanged when either version couldn't be aligned."""
+    if not (old.available and new.available and old.sim is not None and new.sim is not None):
+        return box
+    (oh, ow), (nh, nw) = old.drawing_shape, new.drawing_shape
+    x0, y0, x1, y1 = box
+    corners = np.array([(x0, y0), (x1, y0), (x1, y1), (x0, y1)]) * (ow, oh)
+    m = np.vstack([old.sim.matrix(), [0, 0, 1]])
+    in_photo = (np.linalg.inv(m) @ np.c_[corners, np.ones(4)].T).T[:, :2]
+    mapped = new.sim.apply(in_photo) / (nw, nh)
+    lo, hi = np.clip(mapped.min(axis=0), 0, 1), np.clip(mapped.max(axis=0), 0, 1)
+    return (float(lo[0]), float(lo[1]), float(hi[0]), float(hi[1]))
+
+
 @dataclass
 class FaceComparison:
     available: bool
@@ -73,23 +106,16 @@ class Geometry:
     def __init__(self, model_path: Path | None, detector: Callable = detect_face):
         self.model_path = model_path
         self.detector = detector
-        self._outline: dict = {}
-        self._faces: dict = {}
-        self._detected: dict = {}
-
-    @staticmethod
-    def _key(*arrays) -> tuple:
-        return tuple(id(a) for a in arrays)
+        self._outline, self._faces, self._detected = _LRU(), _LRU(), _LRU()
 
     def compare(self, drawing: np.ndarray, photo: np.ndarray) -> Comparison:
-        key = self._key(drawing, photo)
-        if key not in self._outline:
+        def make():
             try:
-                result = self._compare(drawing, photo)
+                return self._compare(drawing, photo)
             except Exception as e:  # measurement is best-effort; never take down a critique
-                result = Comparison(False, f"measurement error ({type(e).__name__})")
-            self._outline[key] = (result, drawing, photo)  # keep arrays alive
-        return self._outline[key][0]
+                return Comparison(False, f"measurement error ({type(e).__name__})")
+
+        return self._outline.get_or((_digest(drawing), _digest(photo)), make)
 
     def _compare(self, drawing: np.ndarray, photo: np.ndarray) -> Comparison:
         if not drawing_media_ok(drawing):
@@ -110,19 +136,16 @@ class Geometry:
                           outline_distance(d_pts, mapped, size))
 
     def _detect(self, img: np.ndarray) -> FaceLandmarks | None:
-        key = id(img)
-        if key not in self._detected:
-            self._detected[key] = (self.detector(img, self.model_path), img)
-        return self._detected[key][0]
+        return self._detected.get_or(_digest(img), lambda: self.detector(img, self.model_path))
 
     def faces(self, drawing: np.ndarray, photo: np.ndarray) -> FaceComparison:
-        key = self._key(drawing, photo)
-        if key not in self._faces:
+        def make():
             try:
-                self._faces[key] = self._compare_faces(drawing, photo)
+                return self._compare_faces(drawing, photo)
             except Exception as e:
-                self._faces[key] = FaceComparison(False, f"measurement error ({type(e).__name__})")
-        return self._faces[key]
+                return FaceComparison(False, f"measurement error ({type(e).__name__})")
+
+        return self._faces.get_or((_digest(drawing), _digest(photo)), make)
 
     def _compare_faces(self, drawing: np.ndarray, photo: np.ndarray) -> FaceComparison:
         d, p = self._detect(drawing), self._detect(photo)
