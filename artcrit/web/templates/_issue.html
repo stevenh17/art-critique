@@ -1,0 +1,26 @@
+{% if issue.intentional %}
+<li class="issue issue-intentional" id="issue-{{ issue.id }}">
+  <span class="num">{{ issue.number }}</span>
+  <span><strong>{{ issue.title }}</strong> — marked as intentional; revisions of this drawing won't flag it.</span>
+</li>
+{% else %}
+<li class="issue" id="issue-{{ issue.id }}" data-active="{{ issue.rating or '' }}">
+  <span class="num">{{ issue.number }}</span>
+  <div class="issue-body">
+    <strong>{{ issue.title }}</strong>
+    <p>{{ issue.instruction }}</p>
+    <div class="actions" hx-target="#issue-{{ issue.id }}" hx-swap="outerHTML">
+      {% for t, label in [("thumb_up", "👍"), ("thumb_down", "👎"), ("unclear", "Unclear"), ("show_me", "Show me"), ("intentional", "That was on purpose")] %}
+      <button type="button" class="chip{% if issue.rating == t %} active{% endif %}"
+        hx-post="/issues/{{ issue.id }}/events" hx-vals='{"type": "{{ t }}"}'>{{ label }}</button>
+      {% endfor %}
+    </div>
+    {% if zooms %}
+    <div class="zooms">
+      <figure><img src="/images/{{ zooms[0] }}" alt="Your drawing, zoomed"><figcaption>Your drawing</figcaption></figure>
+      <figure><img src="/images/{{ zooms[1] }}" alt="Reference, zoomed"><figcaption>Reference</figcaption></figure>
+    </div>
+    {% endif %}
+  </div>
+</li>
+{% endif %}

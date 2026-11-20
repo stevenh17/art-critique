@@ -1,11 +1,38 @@
 {% extends "base.html" %}
 {% block title %}Critique #{{ s.id }}{% endblock %}
+{% macro boxes(side) %}
+  {% for issue in s.issues if not issue.intentional %}
+  {% set b = issue.drawing_box if side == "drawing" else issue.photo_box %}
+  <div class="box box-{{ side }}" data-n="{{ issue.number }}" style="left:{{ '%.4f'|format(b[0]*100) }}%;top:{{ '%.4f'|format(b[1]*100) }}%;width:{{ '%.4f'|format((b[2]-b[0])*100) }}%;height:{{ '%.4f'|format((b[3]-b[1])*100) }}%"><span>{{ issue.number }}</span></div>
+  {% endfor %}
+{% endmacro %}
 {% block content %}
 <h1>Critique</h1>
 {% if s.status != "done" %}{% include "_status.html" %}{% endif %}
 {% if s.issues %}
+<div class="compare">
+  <figure class="panel">
+    <div class="stage" id="drawing-stage">
+      <img src="/images/{{ s.normalized_path }}" alt="Your drawing">
+      <img src="/submissions/{{ s.id }}/photo-crop" alt="" class="overlay" id="overlay-img" hidden>
+      {{ boxes("drawing") }}
+    </div>
+    <figcaption>Your drawing
+      <label class="overlay-ctl"><input type="checkbox" id="overlay-toggle"> Overlay photo</label>
+      <input type="range" id="overlay-opacity" min="0" max="100" value="50" aria-label="Overlay opacity" hidden>
+    </figcaption>
+  </figure>
+  <figure class="panel">
+    <div class="stage">
+      <img src="/submissions/{{ s.id }}/photo-crop" alt="Reference photo">
+      {{ boxes("photo") }}
+    </div>
+    <figcaption>Reference · <a href="{{ s.photo_source_url }}" rel="noopener" target="_blank">{{ s.photo_license }}</a></figcaption>
+  </figure>
+</div>
 <ol class="issues">
-  {% for issue in s.issues %}<li><strong>{{ issue.title }}</strong> — {{ issue.instruction }}</li>{% endfor %}
+  {% for issue in s.issues %}{% set zooms = None %}{% include "_issue.html" %}{% endfor %}
 </ol>
 {% endif %}
 {% endblock %}
+{% block scripts %}<script src="/static/overlay.js"></script>{% endblock %}

@@ -15,11 +15,13 @@ from artcrit.config import Settings
 from artcrit.engine.base import AgentEngine
 from artcrit.imaging.deskew import find_paper, full_corners, normalize, warp
 from artcrit.imaging.load import UnsupportedImageError, load_image
+from artcrit.imaging.regions import crop, zoom
 from artcrit.store.images import ImageStore
 from artcrit.store.sessions import SessionStore
 from artcrit.web.worker import run_critique
 
 HERE = Path(__file__).parent
+ISSUE_EVENTS = ("thumb_up", "thumb_down", "unclear", "intentional", "show_me")
 
 
 def _thread(fn: Callable[[], None]) -> None:
@@ -144,5 +146,29 @@ def create_app(settings: Settings, engine: AgentEngine,
         store.add_status(submission_id, "queued", "retry")
         start(submission_id)
         return RedirectResponse(f"/submissions/{submission_id}", status_code=303)
+
+    def photo_crop_path(view) -> str:
+        return images.save(crop(images.load(view.photo_path), view.photo_crop), "photo-crop")
+
+    @app.get("/submissions/{submission_id}/photo-crop")
+    def photo_crop(submission_id: int):
+        return FileResponse(images.resolve(photo_crop_path(get_view(submission_id))), media_type="image/png")
+
+    @app.post("/issues/{issue_id}/events", response_class=HTMLResponse)
+    def issue_event(request: Request, issue_id: int, type: str = Form(...)):
+        if type not in ISSUE_EVENTS:
+            raise HTTPException(422, f"unknown event type {type!r}")
+        row = store.get_issue(issue_id)
+        if row is None:
+            raise HTTPException(404, "issue not found")
+        store.add_event(type, issue_id=issue_id, submission_id=row["submission_id"])
+        view = get_view(row["submission_id"])
+        issue = next(i for i in view.issues if i.id == issue_id)
+        zooms = None
+        if type == "show_me":
+            photo = crop(images.load(view.photo_path), view.photo_crop)
+            zooms = (images.save(zoom(images.load(view.normalized_path), issue.drawing_box, pad=0.03), "zoom"),
+                     images.save(zoom(photo, issue.photo_box, pad=0.03), "zoom"))
+        return templates.TemplateResponse(request, "_issue.html", {"issue": issue, "zooms": zooms})
 
     return app
