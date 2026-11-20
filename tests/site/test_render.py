@@ -65,7 +65,7 @@ def test_every_local_link_resolves(world, tmp_path):
         p = Links()
         p.feed(f.read_text())
         for link in p.links:
-            if link.startswith(("http://", "https://", "#", "mailto:")):
+            if link.startswith(("http://", "https://", "#", "mailto:", "data:")):
                 continue
             assert (f.parent / link.split("#")[0]).resolve().exists(), (f, link)
 

@@ -51,4 +51,4 @@ h1 { font-size: 2rem; margin: 0 0 8px; } h2 { margin: 0 0 12px; } h3 { margin: 0
 .lessons h1 { font-size: 1.4rem; margin-top: 28px; } .lessons h2 { font-size: 1.1rem; margin-top: 20px; }
 .history { font: 13px system-ui, sans-serif; color: var(--muted); }
 code { font-size: .9em; }
-@media (max-width: 700px) { .compare { grid-template-columns: 1fr; } .outcomes li { flex-wrap: wrap; } }
+@media (max-width: 700px) { .compare { grid-template-columns: 1fr; } .outcomes li { flex-wrap: wrap; } .o-title { flex-basis: calc(100% - 34px); } }

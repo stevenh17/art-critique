@@ -4,7 +4,9 @@ Upload a realistic drawing and the reference photo you drew it from. An agent co
 
 Critique quality improves over time through a curated memory of **lessons**: markdown files in [`lessons/`](lessons/) that a separate "dreamer" agent consolidates offline from session outcomes, through reviewed pull requests.
 
-> Status: **Plans 1–2 of 4** (critique core, revisions and judging) are built. See the [roadmap](#roadmap).
+> Status: **Plans 1–3 of 4** (critique core, revisions and judging, portfolio site) are built. See the [roadmap](#roadmap).
+>
+> Live portfolio: *(link appears once GitHub Pages is set up — see [docs/publishing.md](docs/publishing.md))*
 
 ## How it works
 
@@ -17,6 +19,7 @@ local web app (FastAPI + Jinja + HTMX, http://127.0.0.1:8000)
   ├─ geometry     outline extraction + best-fit alignment, MediaPipe face landmarks
   ├─ judge        separate agent call, no tools: was each issue fixed in the revision?
   └─ session log  append-only SQLite + images under data/
+  └─ publisher    rebuilds a static site → commits to gh-pages → pushes (GitHub Pages)
 dreamer (planned)  reads the log → edits lessons/ → opens a PR for review
 ```
 
@@ -24,6 +27,7 @@ dreamer (planned)  reads the log → edits lessons/ → opens a PR for review
 - **Separation of roles.** Critic agents read lessons and never write them. Only the dreamer writes lessons, and every change is a pull request.
 - **The critic never grades its own homework.** When you upload a revision, a separate judge sees only the issue and three crops (old, new, photo), never the critic's reasoning. For proportion issues, confident measurement overrides the judge: outline distance after best-fit alignment, face-landmark ratios when the issue is about one or two features, or six points you click ("Help me measure"). Every judge/measurement disagreement is logged.
 - **Append-only log.** Ratings, "That was on purpose" and "Show me" clicks are new event rows; nothing is overwritten.
+- **Public portfolio, private workshop.** The app runs only on your laptop; a static site of published drawings, critiques, revision outcomes and lesson history is rebuilt and pushed to GitHub Pages automatically. Original phone photos, tool traces and judge reasoning never leave the machine. See [docs/publishing.md](docs/publishing.md).
 - **Runs on your Claude login.** No API key; usage counts against your Claude plan. If you hit the limit, the submission waits with a Retry button.
 
 ## Run it
@@ -48,7 +52,7 @@ ARTCRIT_LIVE=1 .venv/bin/pytest -m live  # one real critique on your login
 
 1. **Critique core** ✅: upload, deskew, crop, critic, session log, results page.
 2. **Revisions and judging** ✅: resubmit a revision; a separate judge plus outline and face-landmark geometry decide whether each issue was fixed; aligned overlay.
-3. **Static portfolio site:** automatic publishing of critiques, revisions and lesson history to GitHub Pages, with photo attribution.
+3. **Static portfolio site** ✅: automatic publishing of critiques, revisions and lesson history to GitHub Pages, with photo attribution.
 4. **Dreamer:** offline lesson consolidation that opens pull requests.
 5. *TODO:* **test gate**, a held-out benchmark that blocks lesson changes that make critiques worse.
 

@@ -4,14 +4,34 @@
     {
       "name": "artcrit",
       "runtimeExecutable": ".venv/bin/artcrit",
-      "runtimeArgs": ["serve"],
+      "runtimeArgs": [
+        "serve"
+      ],
       "port": 8000
     },
     {
       "name": "artcrit-test",
       "runtimeExecutable": ".venv/bin/artcrit",
-      "runtimeArgs": ["serve", "--port", "8001"],
+      "runtimeArgs": [
+        "serve",
+        "--port",
+        "8001"
+      ],
       "port": 8001
+    },
+    {
+      "name": "site-preview",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8010",
+        "--directory",
+        "site",
+        "--bind",
+        "127.0.0.1"
+      ],
+      "port": 8010
     }
   ]
 }
