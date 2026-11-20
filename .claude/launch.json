@@ -6,6 +6,12 @@
       "runtimeExecutable": ".venv/bin/artcrit",
       "runtimeArgs": ["serve"],
       "port": 8000
+    },
+    {
+      "name": "artcrit-test",
+      "runtimeExecutable": ".venv/bin/artcrit",
+      "runtimeArgs": ["serve", "--port", "8001"],
+      "port": 8001
     }
   ]
 }

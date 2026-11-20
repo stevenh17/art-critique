@@ -25,6 +25,7 @@ PARTLY_RATIO = 0.85
 NOISE_FLOOR = 0.015  # region error at or below this (fraction of subject/face size) isn't measurable
 LANDMARK_FIXED = 0.5
 LANDMARK_PARTLY = 0.8
+MAX_LANDMARK_FEATURES = 2  # more features in the box means the issue isn't about specific features
 
 
 @dataclass
@@ -61,11 +62,13 @@ def _in_box(pt: np.ndarray, box: Box) -> bool:
 
 
 def measure_issue(issue_box: Box, old, new, old_faces, new_faces) -> GeometryMeasure | None:
-    """Prefer landmarks when both versions have confident faces, else outline distance in the region."""
+    """Landmarks when the issue is about one or two specific facial features and both versions have
+    confident faces; otherwise outline distance in the region (e.g. whole-head shape issues)."""
+    keys = []
     if old_faces.available and new_faces.available:
         keys = [k for k, names in RATIO_FEATURES.items()
                 if _in_box(np.mean([old_faces.drawing.p(n) for n in names], axis=0), issue_box)]
-        keys = keys or list(old_faces.error)
+    if 0 < len(keys) <= MAX_LANDMARK_FEATURES:
         o = float(np.mean([old_faces.error[k] for k in keys]))
         n = float(np.mean([new_faces.error[k] for k in keys]))
         return GeometryMeasure("landmarks", o, n, o > NOISE_FLOOR)

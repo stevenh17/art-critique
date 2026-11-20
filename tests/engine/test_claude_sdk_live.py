@@ -28,3 +28,13 @@ def test_live_critique_parses():
     run = critique(_face(60), _face(0), REPO / "lessons", ClaudeSDKEngine(), repo_dir=REPO)
     print(run.model, [(i.category, i.title) for i in run.critique.issues], len(run.tool_trace))
     assert 2 <= len(run.critique.issues) <= 3
+
+
+def test_live_judge_parses():
+    from artcrit.judge import VERDICTS, judge_issue
+
+    res = judge_issue("proportion", "Head too long: chin far too low",
+                      "Shorten the lower face so the chin sits about a quarter head-height higher.",
+                      _face(60), _face(5), _face(0), ClaudeSDKEngine())
+    print(res)
+    assert res.verdict in VERDICTS

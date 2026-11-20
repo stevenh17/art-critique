@@ -154,3 +154,12 @@ def test_usage_limit_propagates_from_judge(two_versions):
 
     with pytest.raises(UsageLimitError):
         evaluate_revision(store.get_submission(s1), store.get_submission(s2), images, FakeEngine([boom]), None)
+
+
+def test_whole_face_issue_uses_outline_not_landmarks():
+    face = synthetic_face()
+    errs = {"eye_line": 0.10, "mouth": 0.0, "brow": 0, "nose_base": 0, "eye_gap_over_eye_width": 0}
+    whole_head = (0.0, 0.0, 1.0, 1.0)
+    m = measure_issue(whole_head, StubComp(region=0.10), StubComp(region=0.02),
+                      StubFaces(True, errs, face), StubFaces(True, errs, face))
+    assert m.source == "outline" and m.new == pytest.approx(0.02)
