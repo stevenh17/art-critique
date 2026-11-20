@@ -47,7 +47,7 @@ def test_critic_returns_parsed_critique(lessons_dir):
 def test_tools_offered_are_exactly(lessons_dir):
     eng = FakeEngine([_answer()])
     critique(DRAWING, PHOTO, lessons_dir, eng)
-    assert {t.name for t in eng.calls[0]["tools"]} == {"zoom", "grid_overlay", "load_lesson"}
+    assert {t.name for t in eng.calls[0]["tools"]} == {"zoom", "grid_overlay", "load_lesson", "outline_compare", "face_landmarks"}
 
 
 def test_zoom_tool_returns_image_block(lessons_dir):
