@@ -1,5 +1,5 @@
 data/
-site/
+/site/
 .env
 .superpowers/
 __pycache__/
