@@ -96,7 +96,7 @@ def push_site(repo_dir: Path, branch: str = "gh-pages", remote: str = "origin") 
     except GitError:
         return False, f"no remote '{remote}'"
     try:
-        _git(repo_dir, "push", "--quiet", remote, f"refs/heads/{branch}:refs/heads/{branch}")
+        _git(repo_dir, "push", "--quiet", remote, f"refs/heads/{branch}:refs/heads/{branch}", env=_NO_PROMPT)
     except (GitError, subprocess.TimeoutExpired) as e:
         return False, f"push failed: {e}"
     return True, f"pushed to {remote}/{branch}"
