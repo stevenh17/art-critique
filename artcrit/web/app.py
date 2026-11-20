@@ -19,7 +19,8 @@ from artcrit.imaging.load import UnsupportedImageError, load_image
 from artcrit.imaging.regions import crop, zoom
 from artcrit.store.images import ImageStore
 from artcrit.store.sessions import SessionStore
-from artcrit.web.worker import run_critique
+from artcrit.geometry.service import Geometry
+from artcrit.web.worker import run_submission
 
 HERE = Path(__file__).parent
 ISSUE_EVENTS = ("thumb_up", "thumb_down", "unclear", "intentional", "show_me")
@@ -50,7 +51,8 @@ def _parse_corners(raw: str):
 
 
 def create_app(settings: Settings, engine: AgentEngine,
-               run_in_background: Callable[[Callable[[], None]], None] = _thread) -> FastAPI:
+               run_in_background: Callable[[Callable[[], None]], None] = _thread,
+               geometry: Geometry | None = None) -> FastAPI:
     app = FastAPI(title="Art critique")
     store = SessionStore(settings.db_path)
     images = ImageStore(settings.images_dir)
@@ -72,7 +74,7 @@ def create_app(settings: Settings, engine: AgentEngine,
         return json.loads(p.read_text())
 
     def start(submission_id: int) -> None:
-        run_in_background(lambda: run_critique(submission_id, store, images, engine, settings))
+        run_in_background(lambda: run_submission(submission_id, store, images, engine, settings, geometry))
 
     @app.get("/images/{rel_path:path}")
     def image(rel_path: str):
@@ -174,8 +176,14 @@ def create_app(settings: Settings, engine: AgentEngine,
     @app.get("/submissions/{submission_id}", response_class=HTMLResponse)
     def submission(request: Request, submission_id: int):
         view = get_view(submission_id)
-        return templates.TemplateResponse(request, "submission.html",
-                                          {"s": view, "versions": store.versions(view.drawing_id)})
+        ctx = {"s": view, "versions": store.versions(view.drawing_id), "prev": None, "outcomes": [], "closeness": None}
+        if view.parent_id is not None:
+            ctx["prev"] = store.get_submission(view.parent_id)
+            ctx["outcomes"] = store.outcomes_for(view.id)
+            metrics = store.revision_metrics(view.id)
+            if metrics and metrics[0] and metrics[1] is not None:
+                ctx["closeness"] = 1 - metrics[1] / metrics[0]
+        return templates.TemplateResponse(request, "submission.html", ctx)
 
     @app.get("/submissions/{submission_id}/status", response_class=HTMLResponse)
     def status(request: Request, submission_id: int):

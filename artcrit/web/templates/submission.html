@@ -12,6 +12,7 @@
 <nav class="versions">{% for vid, v in versions %}{% if not loop.first %} · {% endif %}<a href="/submissions/{{ vid }}"{% if vid == s.id %} aria-current="page"{% endif %}>v{{ v }}</a>{% endfor %}</nav>
 {% endif %}
 {% if s.status != "done" %}{% include "_status.html" %}{% endif %}
+{% if prev %}{% include "_outcomes.html" %}{% endif %}
 {% if s.issues %}
 <div class="compare">
   <figure class="panel">

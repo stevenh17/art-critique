@@ -27,4 +27,9 @@ def main(argv: list[str] | None = None) -> None:
         from artcrit.engine.claude_sdk import ClaudeSDKEngine
         from artcrit.web.app import create_app
 
-        uvicorn.run(create_app(Settings(), ClaudeSDKEngine()), host=args.host, port=args.port)
+        from artcrit.geometry.landmarks import model_path
+        from artcrit.geometry.service import Geometry
+
+        settings = Settings()
+        app = create_app(settings, ClaudeSDKEngine(), geometry=Geometry(model_path(settings)))
+        uvicorn.run(app, host=args.host, port=args.port)

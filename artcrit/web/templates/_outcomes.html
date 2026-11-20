@@ -1,0 +1,23 @@
+<section class="outcomes">
+  <h2>Since v{{ prev.version }}</h2>
+  {% set open_issues = prev.issues | rejectattr("intentional") | list %}
+  {% if not open_issues %}
+  <p class="hint">Nothing to compare yet — the previous version has no critique to check against.</p>
+  {% elif outcomes %}
+  <ul class="outcome-list">
+    {% for o in outcomes %}
+    <li class="outcome">
+      <span class="num">{{ o.number }}</span>
+      <span class="outcome-title">{{ o.title }}</span>
+      <span class="verdict" data-verdict="{{ o.final_verdict }}">{{ o.final_verdict | replace("_", " ") | replace("cant tell", "can't tell") }}</span>
+      <span class="how" title="{{ o.judge_reason }}">{{ "measured" if o.source.startswith("geometry") else "judged" }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if closeness is not none %}
+  <p class="closeness">Outline {{ "%.0f" | format((closeness * 100) | abs) }}% {{ "closer to" if closeness >= 0 else "further from" }} the reference than v{{ prev.version }}.</p>
+  {% endif %}
+  {% else %}
+  <p class="hint">Checking your fixes…</p>
+  {% endif %}
+</section>

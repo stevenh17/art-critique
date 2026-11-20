@@ -36,13 +36,13 @@ def png_bytes(w=400, h=300, paper=True) -> bytes:
 
 @pytest.fixture
 def make_client(tmp_path):
-    def _make(script):
+    def _make(script, geometry=None):
         lessons = tmp_path / "lessons"
         (lessons / "topics").mkdir(parents=True, exist_ok=True)
         (lessons / "core.md").write_text("# Core\nMeasure.\n")
         settings = Settings(data_dir=tmp_path / "data", lessons_dir=lessons, repo_dir=tmp_path)
         engine = FakeEngine(script)
-        app = create_app(settings, engine, run_in_background=lambda fn: fn())
+        app = create_app(settings, engine, run_in_background=lambda fn: fn(), geometry=geometry)
         return TestClient(app), engine, app
 
     return _make
