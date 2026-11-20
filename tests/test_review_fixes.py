@@ -153,7 +153,7 @@ def test_interrupted_submissions_marked_failed_on_startup(tmp_path):
     from artcrit.config import Settings
     from artcrit.web.app import create_app
 
-    settings = Settings(data_dir=tmp_path / "data", lessons_dir=tmp_path, repo_dir=tmp_path)
+    settings = Settings(data_dir=tmp_path / "data", lessons_dir=tmp_path, repo_dir=tmp_path, publish_enabled=False)
     store = SessionStore(settings.db_path)
     d = store.add_drawing("p.png", (0, 0, 1, 1), "https://x", "CC0", True)
     s = store.add_submission(d, 1, None, "o.png", "n.png", ((0, 0), (1, 0), (1, 1), (0, 1)))

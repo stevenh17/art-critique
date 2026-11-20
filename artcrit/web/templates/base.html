@@ -10,6 +10,11 @@
 <body>
   <header><a href="/" class="brand">Art critique</a></header>
   <main>{% block content %}{% endblock %}</main>
+  {% set pub = publish_status() if publish_status is defined else none %}
+  <footer class="app-footer">Portfolio:
+    {% if pub %}last published {{ pub.at or "—" }} — {{ "pushed" if pub.pushed else "not pushed" }} ({{ pub.message }})
+    {% else %}not published yet{% endif %}
+  </footer>
   {% block scripts %}{% endblock %}
 </body>
 </html>

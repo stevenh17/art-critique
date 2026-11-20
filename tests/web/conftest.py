@@ -40,7 +40,7 @@ def make_client(tmp_path):
         lessons = tmp_path / "lessons"
         (lessons / "topics").mkdir(parents=True, exist_ok=True)
         (lessons / "core.md").write_text("# Core\nMeasure.\n")
-        settings = Settings(data_dir=tmp_path / "data", lessons_dir=lessons, repo_dir=tmp_path)
+        settings = Settings(data_dir=tmp_path / "data", lessons_dir=lessons, repo_dir=tmp_path, publish_enabled=False)
         engine = FakeEngine(script)
         app = create_app(settings, engine, run_in_background=lambda fn: fn(), geometry=geometry)
         return TestClient(app), engine, app

@@ -26,6 +26,8 @@ from artcrit.store.images import ImageStore
 from artcrit.store.sessions import SessionStore
 from artcrit.geometry.points import POINT_NAMES, measure_from_points
 from artcrit.geometry.service import Geometry
+from artcrit.lessons import lessons_sha
+from artcrit.site.service import Publisher, published_lessons_sha
 from artcrit.judge import JudgeResult
 from artcrit.outcomes import OutcomeRow, final_verdict
 from artcrit.web.worker import run_submission
@@ -61,7 +63,7 @@ def _parse_corners(raw: str):
 
 def create_app(settings: Settings, engine: AgentEngine,
                run_in_background: Callable[[Callable[[], None]], None] = _thread,
-               geometry: Geometry | None = None) -> FastAPI:
+               geometry: Geometry | None = None, publisher=None) -> FastAPI:
     app = FastAPI(title="Art critique")
     store = SessionStore(settings.db_path)
     images = ImageStore(settings.images_dir)
@@ -70,6 +72,12 @@ def create_app(settings: Settings, engine: AgentEngine,
     app.state.store, app.state.images, app.state.templates = store, images, templates
     for sid in store.unfinished_submissions():  # a previous server stopped mid-critique
         store.add_status(sid, "failed", "interrupted — retry")
+    if publisher is None and settings.publish_enabled:
+        publisher = Publisher(store, images, settings, run_in_background)
+    app.state.publisher = publisher
+    templates.env.globals["publish_status"] = lambda: publisher.last() if publisher is not None else None
+    if publisher is not None and published_lessons_sha(settings) != lessons_sha(settings.repo_dir):
+        publisher.request()  # merged lesson changes since the last publish
 
     def upload_path(token: str) -> Path:
         if not token.isalnum():
@@ -83,7 +91,7 @@ def create_app(settings: Settings, engine: AgentEngine,
         return json.loads(p.read_text())
 
     def start(submission_id: int) -> None:
-        run_in_background(lambda: run_submission(submission_id, store, images, engine, settings, geometry))
+        run_in_background(lambda: run_submission(submission_id, store, images, engine, settings, geometry, publisher))
 
     @app.get("/images/{rel_path:path}")
     def image(rel_path: str):

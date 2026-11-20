@@ -19,7 +19,7 @@ LIMIT_MESSAGE = "usage limit reached — retry later"
 
 
 def run_submission(submission_id: int, store: SessionStore, images: ImageStore, engine: AgentEngine,
-                   settings: Settings, geometry: Geometry | None = None) -> None:
+                   settings: Settings, geometry: Geometry | None = None, publisher=None) -> None:
     """For a revision, first judge the previous version's issues; then critique this version fresh."""
     sub = store.get_submission(submission_id)
     store.add_status(submission_id, "running")
@@ -51,6 +51,11 @@ def run_submission(submission_id: int, store: SessionStore, images: ImageStore, 
         store.add_revision_metrics(submission_id, revision.overall_old, revision.overall_new)
     store.add_critique(submission_id, run)
     store.add_status(submission_id, "done")
+    if publisher is not None:
+        try:
+            publisher.request()
+        except Exception:  # publishing must never affect the critique
+            log.exception("publish request failed")
 
 
 run_critique = run_submission  # Plan 1 name
