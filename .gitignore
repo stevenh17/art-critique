@@ -1,0 +1,6 @@
+data/
+site/
+.env
+.superpowers/
+__pycache__/
+.venv/
