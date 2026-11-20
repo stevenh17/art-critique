@@ -54,3 +54,22 @@ CREATE TABLE IF NOT EXISTS events (
   payload TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+CREATE TABLE IF NOT EXISTS outcomes (
+  id INTEGER PRIMARY KEY,
+  issue_id INTEGER NOT NULL REFERENCES issues(id),
+  revision_submission_id INTEGER NOT NULL REFERENCES submissions(id),
+  judge_verdict TEXT NOT NULL,
+  judge_reason TEXT NOT NULL,
+  geometry_json TEXT NOT NULL,
+  final_verdict TEXT NOT NULL,
+  source TEXT NOT NULL,
+  disagreement INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE TABLE IF NOT EXISTS revision_metrics (
+  id INTEGER PRIMARY KEY,
+  submission_id INTEGER NOT NULL REFERENCES submissions(id),
+  overall_old REAL,
+  overall_new REAL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);

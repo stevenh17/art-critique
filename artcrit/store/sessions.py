@@ -39,6 +39,31 @@ class IssueView:
 
 
 @dataclass
+class OutcomeRow:
+    issue_id: int
+    revision_submission_id: int
+    judge_verdict: str
+    judge_reason: str
+    geometry_json: str
+    final_verdict: str
+    source: str
+    disagreement: bool
+
+
+@dataclass
+class OutcomeView:
+    issue_id: int
+    number: int
+    category: str
+    title: str
+    final_verdict: str
+    source: str
+    judge_verdict: str
+    judge_reason: str
+    disagreement: bool
+
+
+@dataclass
 class SubmissionView:
     id: int
     drawing_id: int
@@ -162,6 +187,33 @@ class SessionStore:
                 st["status"], st["detail"], crit["model"] if crit else None, crit["lessons_sha"] if crit else None,
                 self._issue_views(c, submission_id), s["parent_id"],
             )
+
+    def add_outcome(self, row: OutcomeRow) -> int:
+        return self._insert(
+            "INSERT INTO outcomes (issue_id, revision_submission_id, judge_verdict, judge_reason, geometry_json, "
+            "final_verdict, source, disagreement) VALUES (?,?,?,?,?,?,?,?)",
+            (row.issue_id, row.revision_submission_id, row.judge_verdict, row.judge_reason, row.geometry_json,
+             row.final_verdict, row.source, int(row.disagreement)))
+
+    def outcomes_for(self, revision_submission_id: int) -> list[OutcomeView]:
+        """Latest outcome row per issue for a revision, in issue order."""
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT o.*, i.position, i.category, i.title FROM outcomes o JOIN issues i ON i.id = o.issue_id "
+                "WHERE o.id IN (SELECT MAX(id) FROM outcomes WHERE revision_submission_id = ? GROUP BY issue_id) "
+                "ORDER BY i.position", (revision_submission_id,)).fetchall()
+        return [OutcomeView(r["issue_id"], r["position"], r["category"], r["title"], r["final_verdict"], r["source"],
+                            r["judge_verdict"], r["judge_reason"], bool(r["disagreement"])) for r in rows]
+
+    def add_revision_metrics(self, submission_id: int, overall_old: float | None, overall_new: float | None) -> int:
+        return self._insert("INSERT INTO revision_metrics (submission_id, overall_old, overall_new) VALUES (?,?,?)",
+                            (submission_id, overall_old, overall_new))
+
+    def revision_metrics(self, submission_id: int) -> tuple[float | None, float | None] | None:
+        with self._conn() as c:
+            r = c.execute("SELECT overall_old, overall_new FROM revision_metrics WHERE submission_id = ? "
+                          "ORDER BY id DESC LIMIT 1", (submission_id,)).fetchone()
+        return (r["overall_old"], r["overall_new"]) if r else None
 
     def latest_submission(self, drawing_id: int) -> int | None:
         with self._conn() as c:
