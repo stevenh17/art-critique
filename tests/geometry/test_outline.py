@@ -105,3 +105,19 @@ def test_region_distance_isolates_bottom():
     top = a[:, 1] < np.percentile(a[:, 1], 30)
     bottom = a[:, 1] > np.percentile(a[:, 1], 70)
     assert outline_distance(a, b, size, bottom) > 2 * outline_distance(a, b, size, top)
+
+
+def test_align_never_turns_subject_upside_down():
+    from artcrit.geometry.outline import MAX_ROTATION_DEG
+
+    src = contour_points(drawing_mask(ellipse_drawing()))
+    flipped = Similarity(1.0, 170.0, 500.0, 600.0).apply(src)
+    assert abs(align(src, flipped).angle_deg) <= MAX_ROTATION_DEG
+
+
+def test_align_symmetric_oval_stays_upright():
+    img = np.full((600, 480, 3), 245, np.uint8)
+    cv2.ellipse(img, (240, 300), (140, 200), 0, 0, 360, (20, 20, 20), 3)
+    src = contour_points(drawing_mask(img))
+    est = align(src, Similarity(0.8, 0.0, 30.0, 10.0).apply(src))
+    assert abs(est.angle_deg) < 5

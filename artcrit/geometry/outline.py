@@ -12,6 +12,7 @@ import numpy as np
 MIN_DRAWING_LUMINANCE = 140
 _MIN_MASK, _MAX_MASK = 0.02, 0.95
 _KEEP_FRACTION = 0.15
+MAX_ROTATION_DEG = 30.0  # drawings are deskewed and photos cropped upright
 
 
 def _gray(img: np.ndarray) -> np.ndarray:
@@ -131,7 +132,8 @@ def align(src: np.ndarray, dst: np.ndarray, iterations: int = 30) -> Similarity:
     scale0 = subject_size(dst) / max(subject_size(src), 1e-9)
     d_angle = _principal_angle(dst) - _principal_angle(src)
     best: tuple[float, Similarity] | None = None
-    for angle in (d_angle, d_angle + 180.0, 0.0):
+    candidates = [a for a in (_wrap(d_angle), _wrap(d_angle + 180.0)) if abs(a) <= MAX_ROTATION_DEG] + [0.0]
+    for angle in candidates:
         rot = Similarity(scale0, angle, 0.0, 0.0).apply(src)
         t = dst.mean(axis=0) - rot.mean(axis=0)
         sim = Similarity(scale0, angle, t[0], t[1])
@@ -146,10 +148,20 @@ def align(src: np.ndarray, dst: np.ndarray, iterations: int = 30) -> Similarity:
             if prev - err < 1e-3:
                 break
             prev = err
+        if abs(_wrap(sim.angle_deg)) > MAX_ROTATION_DEG:
+            continue  # both images are upright; a large rotation means ICP slid into a mirror-image fit
         err = _sym_error(sim.apply(src), dst)
         if best is None or err < best[0]:
             best = (err, sim)
+    if best is None:  # every refinement rotated too far: fall back to the moments-only estimate
+        rot = Similarity(scale0, 0.0, 0.0, 0.0).apply(src)
+        t = dst.mean(axis=0) - rot.mean(axis=0)
+        return Similarity(scale0, 0.0, t[0], t[1])
     return best[1]
+
+
+def _wrap(angle: float) -> float:
+    return (angle + 180.0) % 360.0 - 180.0
 
 
 def outline_distance(a: np.ndarray, b: np.ndarray, size: float, region: np.ndarray | None = None) -> float:

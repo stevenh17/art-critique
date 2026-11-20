@@ -66,3 +66,7 @@ a.button { display: inline-block; padding: 8px 14px; border-radius: 6px; backgro
 .pt { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: var(--accent-2);
   color: #fff; font-size: 11px; display: grid; place-items: center; cursor: pointer; }
 @media (max-width: 700px) { .measure-grid { grid-template-columns: 1fr; } }
+.outcome { flex-wrap: nowrap; align-items: flex-start; }
+.outcome-title { flex: 1 1 auto; min-width: 0; }
+.outcome .verdict, .outcome .how { flex: none; }
+@media (max-width: 700px) { .outcome { flex-wrap: wrap; } .outcome-title { flex-basis: calc(100% - 34px); } }
