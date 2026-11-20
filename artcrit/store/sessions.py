@@ -1,0 +1,171 @@
+"""Append-only SQLite session log: one record per submission plus event rows."""
+
+import json
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from importlib.resources import files
+from pathlib import Path
+from typing import Literal, get_args
+
+from artcrit.critic import CritiqueRun
+from artcrit.imaging.regions import Box, cells_to_box
+
+EventType = Literal["thumb_up", "thumb_down", "unclear", "intentional", "show_me", "help_measure", "publish_toggle"]
+Status = Literal["queued", "running", "done", "failed", "limit"]
+RATINGS = ("thumb_up", "thumb_down", "unclear")
+
+
+@dataclass
+class IssueView:
+    id: int
+    number: int
+    category: str
+    title: str
+    instruction: str
+    drawing_cells: list[str]
+    photo_cells: list[str]
+    rating: str | None
+    intentional: bool
+
+    @property
+    def drawing_box(self) -> Box:
+        return cells_to_box(self.drawing_cells)
+
+    @property
+    def photo_box(self) -> Box:
+        return cells_to_box(self.photo_cells)
+
+
+@dataclass
+class SubmissionView:
+    id: int
+    drawing_id: int
+    version: int
+    normalized_path: str
+    photo_path: str
+    photo_crop: Box
+    photo_source_url: str
+    photo_license: str
+    publish: bool
+    status: str
+    status_detail: str
+    model: str | None
+    lessons_sha: str | None
+    issues: list[IssueView]
+
+
+class SessionStore:
+    def __init__(self, db_path: Path):
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._conn() as c:
+            c.executescript(files("artcrit.store").joinpath("schema.sql").read_text())
+
+    @contextmanager
+    def _conn(self) -> Iterator[sqlite3.Connection]:
+        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn.row_factory = sqlite3.Row
+        try:
+            with conn:  # commits on success, rolls back on error
+                yield conn
+        finally:
+            conn.close()
+
+    def _insert(self, sql: str, params: tuple) -> int:
+        with self._conn() as c:
+            return c.execute(sql, params).lastrowid
+
+    def add_drawing(self, photo_path: str, photo_crop: Box, photo_source_url: str, photo_license: str, publish: bool) -> int:
+        return self._insert(
+            "INSERT INTO drawings (photo_path, photo_crop, photo_source_url, photo_license, publish) VALUES (?,?,?,?,?)",
+            (photo_path, json.dumps(list(photo_crop)), photo_source_url, photo_license, int(publish)),
+        )
+
+    def add_submission(self, drawing_id: int, version: int, parent_id: int | None, original_path: str,
+                       normalized_path: str, corners) -> int:
+        sid = self._insert(
+            "INSERT INTO submissions (drawing_id, version, parent_id, original_path, normalized_path, corners) "
+            "VALUES (?,?,?,?,?,?)",
+            (drawing_id, version, parent_id, original_path, normalized_path, json.dumps([list(p) for p in corners])),
+        )
+        self.add_status(sid, "queued")
+        return sid
+
+    def add_status(self, submission_id: int, status: Status, detail: str = "") -> None:
+        if status not in get_args(Status):
+            raise ValueError(f"unknown status {status!r}")
+        self._insert("INSERT INTO submission_status (submission_id, status, detail) VALUES (?,?,?)",
+                     (submission_id, status, detail))
+
+    def add_critique(self, submission_id: int, run: CritiqueRun) -> list[int]:
+        with self._conn() as c:
+            cid = c.execute(
+                "INSERT INTO critiques (submission_id, critique_json, tool_trace, model, lessons_sha) VALUES (?,?,?,?,?)",
+                (submission_id, run.critique.model_dump_json(), json.dumps(run.tool_trace), run.model, run.lessons_sha),
+            ).lastrowid
+            return [
+                c.execute(
+                    "INSERT INTO issues (critique_id, submission_id, position, category, title, instruction, "
+                    "drawing_cells, photo_cells, lesson_refs) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (cid, submission_id, n, i.category, i.title, i.instruction, json.dumps(i.drawing_cells),
+                     json.dumps(i.photo_cells), json.dumps(i.lesson_refs)),
+                ).lastrowid
+                for n, i in enumerate(run.critique.issues, start=1)
+            ]
+
+    def add_event(self, type: EventType, issue_id: int | None = None, submission_id: int | None = None,
+                  payload: dict | None = None) -> int:
+        if type not in get_args(EventType):
+            raise ValueError(f"unknown event type {type!r}")
+        return self._insert("INSERT INTO events (type, issue_id, submission_id, payload) VALUES (?,?,?,?)",
+                            (type, issue_id, submission_id, json.dumps(payload or {})))
+
+    def get_issue(self, issue_id: int) -> sqlite3.Row | None:
+        with self._conn() as c:
+            return c.execute("SELECT * FROM issues WHERE id = ?", (issue_id,)).fetchone()
+
+    def _issue_views(self, c: sqlite3.Connection, submission_id: int) -> list[IssueView]:
+        crit = c.execute("SELECT id FROM critiques WHERE submission_id = ? ORDER BY id DESC LIMIT 1",
+                         (submission_id,)).fetchone()
+        if crit is None:
+            return []
+        views = []
+        for r in c.execute("SELECT * FROM issues WHERE critique_id = ? ORDER BY position", (crit["id"],)):
+            rating = c.execute(
+                f"SELECT type FROM events WHERE issue_id = ? AND type IN ({','.join('?' * len(RATINGS))}) "
+                "ORDER BY id DESC LIMIT 1", (r["id"], *RATINGS)).fetchone()
+            intentional = c.execute("SELECT 1 FROM events WHERE issue_id = ? AND type = 'intentional'",
+                                    (r["id"],)).fetchone()
+            views.append(IssueView(r["id"], r["position"], r["category"], r["title"], r["instruction"],
+                                   json.loads(r["drawing_cells"]), json.loads(r["photo_cells"]),
+                                   rating["type"] if rating else None, intentional is not None))
+        return views
+
+    def get_submission(self, submission_id: int) -> SubmissionView | None:
+        with self._conn() as c:
+            s = c.execute(
+                "SELECT s.*, d.photo_path, d.photo_crop, d.photo_source_url, d.photo_license, d.publish "
+                "FROM submissions s JOIN drawings d ON d.id = s.drawing_id WHERE s.id = ?", (submission_id,)
+            ).fetchone()
+            if s is None:
+                return None
+            st = c.execute("SELECT status, detail FROM submission_status WHERE submission_id = ? "
+                           "ORDER BY id DESC LIMIT 1", (submission_id,)).fetchone()
+            crit = c.execute("SELECT model, lessons_sha FROM critiques WHERE submission_id = ? ORDER BY id DESC LIMIT 1",
+                             (submission_id,)).fetchone()
+            return SubmissionView(
+                s["id"], s["drawing_id"], s["version"], s["normalized_path"], s["photo_path"],
+                tuple(json.loads(s["photo_crop"])), s["photo_source_url"], s["photo_license"], bool(s["publish"]),
+                st["status"], st["detail"], crit["model"] if crit else None, crit["lessons_sha"] if crit else None,
+                self._issue_views(c, submission_id),
+            )
+
+    def intentional_boxes(self, drawing_id: int) -> list[Box]:
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT DISTINCT i.id, i.drawing_cells FROM events e JOIN issues i ON i.id = e.issue_id "
+                "JOIN submissions s ON s.id = i.submission_id WHERE e.type = 'intentional' AND s.drawing_id = ? "
+                "ORDER BY i.id", (drawing_id,)).fetchall()
+        return [cells_to_box(json.loads(r["drawing_cells"])) for r in rows]
