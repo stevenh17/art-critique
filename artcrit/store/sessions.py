@@ -220,6 +220,49 @@ class SessionStore:
             row = c.execute("SELECT MAX(id) AS id FROM submissions WHERE drawing_id = ?", (drawing_id,)).fetchone()
         return row["id"]
 
+    # ---- read-only queries for the dreamer ----
+    def evidence_issue_rows(self, after_submission: int, after_outcome: int, after_event: int) -> list[sqlite3.Row]:
+        """Issues of done submissions that are new, or have outcomes/feedback newer than the given ids."""
+        with self._conn() as c:
+            return c.execute(
+                "SELECT i.id, i.submission_id, i.position, i.category, i.title, i.instruction, i.lesson_refs "
+                "FROM issues i JOIN submissions s ON s.id = i.submission_id "
+                "WHERE i.critique_id = (SELECT MAX(id) FROM critiques WHERE submission_id = s.id) "
+                "AND (SELECT status FROM submission_status WHERE submission_id = s.id ORDER BY id DESC LIMIT 1) = 'done' "
+                "AND (s.id > ? OR EXISTS (SELECT 1 FROM outcomes o WHERE o.issue_id = i.id AND o.id > ?) "
+                "OR EXISTS (SELECT 1 FROM events e WHERE e.issue_id = i.id AND e.id > ? "
+                "AND e.type IN ('thumb_up','thumb_down','unclear','intentional','show_me'))) "
+                "ORDER BY i.submission_id, i.position", (after_submission, after_outcome, after_event)).fetchall()
+
+    def issue_outcomes(self, issue_id: int) -> list[sqlite3.Row]:
+        """Latest outcome per revision for one issue."""
+        with self._conn() as c:
+            return c.execute(
+                "SELECT final_verdict, source, disagreement FROM outcomes WHERE id IN "
+                "(SELECT MAX(id) FROM outcomes WHERE issue_id = ? GROUP BY revision_submission_id) ORDER BY id",
+                (issue_id,)).fetchall()
+
+    def is_intentional(self, issue_id: int) -> bool:
+        with self._conn() as c:
+            return c.execute("SELECT 1 FROM events WHERE issue_id = ? AND type = 'intentional'",
+                             (issue_id,)).fetchone() is not None
+
+    def max_ids(self) -> tuple[int, int, int]:
+        """(latest done submission id, latest outcome id, latest event id)."""
+        with self._conn() as c:
+            sub = c.execute(
+                "SELECT MAX(s.id) AS m FROM submissions s WHERE (SELECT status FROM submission_status "
+                "WHERE submission_id = s.id ORDER BY id DESC LIMIT 1) = 'done'").fetchone()["m"]
+            out = c.execute("SELECT MAX(id) AS m FROM outcomes").fetchone()["m"]
+            ev = c.execute("SELECT MAX(id) AS m FROM events").fetchone()["m"]
+        return sub or 0, out or 0, ev or 0
+
+    def user_texts(self) -> list[str]:
+        """Everything a user typed that is stored: photo licenses and source links."""
+        with self._conn() as c:
+            rows = c.execute("SELECT photo_license, photo_source_url FROM drawings").fetchall()
+        return sorted({t for r in rows for t in (r["photo_license"], r["photo_source_url"]) if t})
+
     def effective_publish(self, drawing_id: int) -> bool:
         """Latest publish_toggle event for the drawing wins; otherwise the flag chosen at upload."""
         with self._conn() as c:
