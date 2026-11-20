@@ -220,6 +220,30 @@ class SessionStore:
             row = c.execute("SELECT MAX(id) AS id FROM submissions WHERE drawing_id = ?", (drawing_id,)).fetchone()
         return row["id"]
 
+    def effective_publish(self, drawing_id: int) -> bool:
+        """Latest publish_toggle event for the drawing wins; otherwise the flag chosen at upload."""
+        with self._conn() as c:
+            ev = c.execute("SELECT payload FROM events WHERE type = 'publish_toggle' "
+                           "AND json_extract(payload, '$.drawing_id') = ? ORDER BY id DESC LIMIT 1",
+                           (drawing_id,)).fetchone()
+            if ev is not None:
+                return bool(json.loads(ev["payload"]).get("publish"))
+            row = c.execute("SELECT publish FROM drawings WHERE id = ?", (drawing_id,)).fetchone()
+        return bool(row and row["publish"])
+
+    def published_drawing_ids(self) -> list[int]:
+        with self._conn() as c:
+            ids = [r["id"] for r in c.execute("SELECT id FROM drawings ORDER BY id")]
+        return [d for d in ids if self.effective_publish(d)]
+
+    def rating_counts(self, issue_id: int) -> dict[str, int]:
+        keys = ("thumb_up", "thumb_down", "unclear", "show_me")
+        with self._conn() as c:
+            rows = c.execute(f"SELECT type, COUNT(*) AS n FROM events WHERE issue_id = ? AND type IN "
+                             f"({','.join('?' * len(keys))}) GROUP BY type", (issue_id, *keys)).fetchall()
+        counts = {r["type"]: r["n"] for r in rows}
+        return {k: counts.get(k, 0) for k in keys}
+
     def latest_done_submission(self, drawing_id: int) -> int | None:
         """Newest version whose latest status is 'done' — the one a revision should be checked against."""
         with self._conn() as c:
