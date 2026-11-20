@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="intro">
+  <h1>Drawings, critiques, revisions</h1>
+  <p>Each drawing was compared against the reference photo it was drawn from. An agent named the two or three fixes that mattered most; later versions show whether each fix landed.</p>
+</section>
+{% if data.drawings %}
+<ul class="gallery">
+  {% for d in data.drawings | reverse %}
+  {% set latest = d.versions[-1] %}
+  <li>
+    <a href="drawings/{{ d.slug }}.html">
+      <img src="{{ img[latest.drawing_image] }}" alt="{{ d.title }}, version {{ latest.version }}" loading="lazy">
+      <span class="g-title">{{ d.title }}</span>
+      <span class="g-meta">{{ d.versions | length }} version{{ "s" if d.versions | length != 1 }}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">Nothing published yet.</p>
+{% endif %}
+{% endblock %}

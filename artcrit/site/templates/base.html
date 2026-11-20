@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Agentic Art Critique{% endblock %}</title>
+  <link rel="stylesheet" href="{{ root }}static/site.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="{{ root }}index.html">Agentic Art Critique</a>
+    <nav><a href="{{ root }}index.html">Drawings</a><a href="{{ root }}lessons.html">Lessons</a><a href="{{ root }}about.html">How it works</a></nav>
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+  <footer>Generated {{ data.generated_at }} · lessons {{ data.lessons_sha[:7] }}</footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -31,7 +31,7 @@ artcrit = "artcrit.cli:main"
 include = ["artcrit*"]
 
 [tool.setuptools.package-data]
-artcrit = ["store/*.sql", "web/templates/*.html", "web/static/*"]
+artcrit = ["store/*.sql", "web/templates/*.html", "web/static/*", "site/templates/*.html", "site/static/*"]
 
 [tool.pytest.ini_options]
 markers = ["live: calls the real Claude engine (set ARTCRIT_LIVE=1)", "models: needs downloaded model files (artcrit fetch-models)"]

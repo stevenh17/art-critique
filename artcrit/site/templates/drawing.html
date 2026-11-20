@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ d.title }} · Agentic Art Critique{% endblock %}
+{% macro boxes(issues, side) %}
+  {% for i in issues if not i.intentional %}
+  {% set b = i.drawing_box if side == "drawing" else i.photo_box %}
+  <div class="box box-{{ side }}" data-n="{{ i.number }}" style="left:{{ b[0] | pct }}%;top:{{ b[1] | pct }}%;width:{{ (b[2] - b[0]) | pct }}%;height:{{ (b[3] - b[1]) | pct }}%"><span>{{ i.number }}</span></div>
+  {% endfor %}
+{% endmacro %}
+{% block content %}
+<h1>{{ d.title }}</h1>
+<p class="credit">Reference:
+  {% if d.source_url %}<a href="{{ d.source_url }}" rel="noopener nofollow">{{ d.license }}</a>{% else %}{{ d.license }}{% endif %}
+</p>
+{% for v in d.versions | reverse %}
+<article class="version" id="v{{ v.version }}">
+  <h2>v{{ v.version }}</h2>
+  {% if v.outcomes %}
+  <section class="outcomes">
+    <h3>Since v{{ v.version - 1 }}</h3>
+    <ul>
+      {% for o in v.outcomes %}
+      <li><span class="num">{{ o.number }}</span><span class="o-title">{{ o.title }}</span>
+        <span class="verdict" data-verdict="{{ o.verdict }}">{{ o.verdict | replace("_", " ") | replace("cant tell", "can't tell") }}</span>
+        <span class="muted">{{ "measured" if o.measured else "judged" }}</span></li>
+      {% endfor %}
+    </ul>
+    {% if v.closeness is not none %}
+    <p class="closeness">Outline {{ "%.0f" | format((v.closeness * 100) | abs) }}% {{ "closer to" if v.closeness >= 0 else "further from" }} the reference than v{{ v.version - 1 }}.</p>
+    {% endif %}
+  </section>
+  {% endif %}
+  <div class="compare">
+    <figure>
+      <div class="stage">
+        <img src="../{{ img[v.drawing_image] }}" alt="{{ d.title }}, version {{ v.version }}" loading="lazy">
+        <img src="../{{ img[d.photo_image] }}" alt="" class="overlay" hidden>
+        {{ boxes(v.issues, "drawing") }}
+      </div>
+      <figcaption>Drawing
+        <label class="ov"><input type="checkbox" class="ov-toggle"> overlay reference</label>
+        <input type="range" class="ov-opacity" min="0" max="100" value="50" aria-label="Overlay opacity" hidden>
+      </figcaption>
+    </figure>
+    <figure>
+      <div class="stage">
+        <img src="../{{ img[d.photo_image] }}" alt="Reference photo" loading="lazy">
+        {{ boxes(v.issues, "photo") }}
+      </div>
+      <figcaption>Reference</figcaption>
+    </figure>
+  </div>
+  <ol class="issues">
+    {% for i in v.issues %}
+    <li class="issue{{ ' intentional' if i.intentional }}">
+      <span class="num">{{ i.number }}</span>
+      <div>
+        <strong>{{ i.title }}</strong>{% if i.intentional %} <span class="muted">— marked intentional by the artist</span>{% endif %}
+        <p>{{ i.instruction }}</p>
+        {% set r = i.ratings %}
+        {% if r.thumb_up or r.thumb_down or r.unclear %}<p class="muted small">👍 {{ r.thumb_up }} · 👎 {{ r.thumb_down }}{% if r.unclear %} · unclear {{ r.unclear }}{% endif %}</p>{% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="muted small">Critique by {{ v.model }} · lessons {{ v.lessons_sha[:7] }}</p>
+</article>
+{% endfor %}
+{% endblock %}
+{% block scripts %}<script src="../static/overlay.js"></script>{% endblock %}
