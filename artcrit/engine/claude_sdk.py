@@ -21,6 +21,9 @@ from claude_agent_sdk._errors import ResultError
 from artcrit.engine.base import AgentResult, EngineError, ToolSpec, UsageLimitError
 
 SERVER = "critic"
+# The SDK rejects any single CLI message over 1 MB by default, and a tool result carrying one
+# model-sized image (up to MODEL_MAX_B64 = 3.5 MB of base64) is a single message.
+MAX_BUFFER_SIZE = 16 * 1024 * 1024
 
 
 def _to_mcp_content(blocks: list[dict]) -> list[dict]:
@@ -56,6 +59,7 @@ class ClaudeSDKEngine:
             setting_sources=[],
             system_prompt=system,
             max_turns=max_turns,
+            max_buffer_size=MAX_BUFFER_SIZE,
         )
         content = [{"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b}} for b in images]
         content.append({"type": "text", "text": prompt_text})

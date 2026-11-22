@@ -43,7 +43,7 @@ def run_submission(submission_id: int, store: SessionStore, images: ImageStore, 
         return
     except Exception as e:  # never leave a submission stuck in 'running'
         log.exception("critique %s crashed", submission_id)
-        store.add_status(submission_id, "failed", f"{FAILED_MESSAGE} ({type(e).__name__})")
+        store.add_status(submission_id, "failed", f"{FAILED_MESSAGE} ({type(e).__name__}: {e})"[:500])
         return
     if revision is not None:  # stored only once everything succeeded, so a retry never shows duplicates
         for row in revision.outcomes:
