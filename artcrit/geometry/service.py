@@ -10,18 +10,19 @@ import numpy as np
 
 from artcrit.geometry.landmarks import FaceLandmarks, detect_face, landmark_error, landmarks_sane
 from artcrit.geometry.outline import (
+    MAX_FIT_COST,
     Similarity,
     align,
-    contour_points,
-    drawing_mask,
+    drawing_lines,
     drawing_media_ok,
-    outline_distance,
-    photo_mask,
+    line_distance,
+    line_points,
+    photo_edges,
     subject_size,
 )
 from artcrit.imaging.regions import Box, fit
 
-WORK_SIDE = 800  # geometry runs on downscaled copies; results map back to full resolution
+WORK_SIDE = 400  # geometry runs on downscaled copies; results map back to full resolution
 MIN_REGION_POINTS = 10
 CACHE_SIZE = 16  # results only (never images), keyed by pixel content
 
@@ -46,13 +47,14 @@ class Comparison:
     available: bool
     reason: str = ""
     sim: Similarity | None = None  # photo (work px) → drawing (work px)
-    drawing_pts: np.ndarray | None = None  # drawing outline, work px
-    photo_pts_in_drawing: np.ndarray | None = None  # photo outline mapped into drawing work px
+    drawing_pts: np.ndarray | None = None  # drawn line points, work px
+    photo_pts_in_drawing: np.ndarray | None = None  # photo edge points mapped into drawing work px
     size: float = 0.0
     drawing_shape: tuple[int, int] = (0, 0)  # work (h, w)
     drawing_scale: float = 1.0  # full → work
     photo_scale: float = 1.0
     overall: float | None = None
+    fit_cost: float | None = None  # 0 = every line found a counterpart, 1 = none did
 
     def region_distance(self, box: Box) -> float | None:
         if not self.available:
@@ -63,7 +65,7 @@ class Comparison:
         region = (pts[:, 0] >= x0 * w) & (pts[:, 0] <= x1 * w) & (pts[:, 1] >= y0 * h) & (pts[:, 1] <= y1 * h)
         if region.sum() < MIN_REGION_POINTS:
             return None
-        return outline_distance(pts, self.photo_pts_in_drawing, self.size, region)
+        return line_distance(pts, self.photo_pts_in_drawing, self.size, region)
 
     def full_matrix(self) -> np.ndarray:
         """2×3 affine mapping full-resolution photo pixels to full-resolution drawing pixels."""
@@ -122,18 +124,20 @@ class Geometry:
             return Comparison(False, "drawing media too dark for outline measurement")
         d_small, d_scale = _work(drawing)
         p_small, p_scale = _work(photo)
-        d_mask = drawing_mask(d_small)
-        if d_mask is None:
+        d_lines = drawing_lines(d_small)
+        if d_lines is None:
             return Comparison(False, "no subject outline in drawing")
-        p_mask = photo_mask(p_small)
-        if p_mask is None:
+        p_edges = photo_edges(p_small)
+        if p_edges is None:
             return Comparison(False, "no subject in photo")
-        d_pts, p_pts = contour_points(d_mask), contour_points(p_mask)
-        sim = align(p_pts, d_pts)
-        mapped = sim.apply(p_pts)
+        sim, cost = align(p_edges, d_lines)
+        if cost > MAX_FIT_COST:
+            return Comparison(False, "couldn't match the drawing's lines to the photo", fit_cost=cost)
+        d_pts = line_points(d_lines)
+        mapped = sim.apply(line_points(p_edges))
         size = subject_size(d_pts)
         return Comparison(True, "", sim, d_pts, mapped, size, d_small.shape[:2], d_scale, p_scale,
-                          outline_distance(d_pts, mapped, size))
+                          line_distance(d_pts, mapped, size), cost)
 
     def _detect(self, img: np.ndarray) -> FaceLandmarks | None:
         return self._detected.get_or(_digest(img), lambda: self.detector(img, self.model_path))

@@ -77,7 +77,7 @@ def measure_issue(issue_box: Box, old, new, old_faces, new_faces, new_box: Box |
     o, n = old.region_distance(issue_box), new.region_distance(new_box or issue_box)
     if o is None or n is None:
         return None
-    # An unchanged silhouette can't tell us about interior changes (e.g. moved eyes): leave it to the judge.
+    # Too little measured change in the region to call it either way: leave it to the judge.
     return GeometryMeasure("outline", o, n, o > NOISE_FLOOR and abs(o - n) > NOISE_FLOOR)
 
 

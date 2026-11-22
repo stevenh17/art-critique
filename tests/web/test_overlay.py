@@ -5,7 +5,6 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from artcrit.geometry.outline import drawing_mask
 from artcrit.geometry.service import Geometry
 
 from .conftest import answer, png_bytes
@@ -67,7 +66,11 @@ def test_aligned_overlay_matches_subject(make_client):
     client, url, view, app = run(make_client)
     overlay = _decode(client.get(f"{url}/overlay").content)
     subject = (np.abs(overlay.astype(int) - (80, 100, 150)).sum(axis=2) < 60)
-    drawn = drawing_mask(app.state.images.load(view.normalized_path))
+    h, w = app.state.images.load(view.normalized_path).shape[:2]
+    drawn = np.zeros((h, w), np.uint8)  # the drawn ellipse, filled, at the normalized drawing's size
+    cv2.ellipse(drawn, (round(240 * w / 480), round(320 * h / 640)), (round(150 * w / 480), round(210 * h / 640)),
+                0, 0, 360, 1, -1)
+    drawn = drawn > 0
     iou = (subject & drawn).sum() / (subject | drawn).sum()
     assert iou > 0.85
 

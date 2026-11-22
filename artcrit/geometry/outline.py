@@ -1,4 +1,10 @@
-"""Subject outlines, best-fit similarity alignment, and outline distance.
+"""Subject lines, best-fit similarity alignment, and line distance.
+
+The drawing is reduced to its pencil lines and the photo to its strong edges. Neither is
+filled into a silhouette: open strokes (shoulders, collars) count, and the two images may
+show different amounts of the subject. Alignment is a two-way truncated chamfer match:
+drawn lines should sit on photo edges, and photo edges should sit on drawn lines; points
+with no counterpart cost a fixed amount instead of dragging the fit.
 
 Distances are divided by the subject's size, so they're comparable across drawings
 photographed at different scales."""
@@ -10,9 +16,14 @@ import cv2
 import numpy as np
 
 MIN_DRAWING_LUMINANCE = 140
-_MIN_MASK, _MAX_MASK = 0.02, 0.95
-_KEEP_FRACTION = 0.15
-MAX_ROTATION_DEG = 30.0  # drawings are deskewed and photos cropped upright
+MAX_ROTATION_DEG = 12.0  # drawings are deskewed and photos cropped upright
+SCALE_RANGE = (0.6, 1.6)  # around the ratio of the two subjects' bounding boxes
+SHIFT_RANGE = 0.25  # coarse search, as a fraction of the drawing's subject size
+TRUNCATE = 0.08  # chamfer and distance cap, as a fraction of subject size
+MAX_POINTS = 1200
+MIN_LINE_FRACTION = 0.001  # fewer line pixels than this means there's nothing to measure
+_MIN_COMPONENT = 0.0004  # drop specks smaller than this fraction of the image
+MAX_FIT_COST = 0.35  # mean truncated chamfer cost above this (fraction of TRUNCATE): no confident fit
 
 
 def _gray(img: np.ndarray) -> np.ndarray:
@@ -20,66 +31,51 @@ def _gray(img: np.ndarray) -> np.ndarray:
 
 
 def drawing_media_ok(img: np.ndarray) -> bool:
-    """Outline geometry assumes dark marks on light paper or a light canvas."""
+    """Line extraction assumes dark marks on light paper or a light canvas."""
     return float(np.median(_gray(img))) >= MIN_DRAWING_LUMINANCE
 
 
-def _bounded(mask: np.ndarray) -> np.ndarray | None:
-    frac = mask.mean()
-    return mask if _MIN_MASK <= frac <= _MAX_MASK else None
+def _drop_specks(mask: np.ndarray) -> np.ndarray:
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), connectivity=8)
+    keep = np.zeros(n, bool)
+    keep[1:] = stats[1:, cv2.CC_STAT_AREA] >= _MIN_COMPONENT * mask.size
+    return keep[labels]
 
 
-def drawing_mask(img: np.ndarray) -> np.ndarray | None:
-    """Filled silhouette of the drawn subject (bool), ignoring small stray marks."""
+def _enough(mask: np.ndarray) -> np.ndarray | None:
+    return mask if mask.mean() >= MIN_LINE_FRACTION else None
+
+
+def drawing_lines(img: np.ndarray) -> np.ndarray | None:
+    """Pencil marks (bool), measured against the local paper tone so uneven lighting doesn't count."""
     gray = _gray(img)
-    median = float(np.median(gray))
-    otsu, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    thresh = min(otsu, median - 40)
-    marks = (gray <= thresh).astype(np.uint8) * 255
-    if marks.mean() / 255 < 0.001:
-        return None
-    k = max(3, round(0.02 * max(gray.shape)))
-    closed = cv2.morphologyEx(marks, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
-    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    filled = np.zeros_like(closed)
-    cv2.drawContours(filled, contours, -1, 255, cv2.FILLED)
-    n, labels, stats, _ = cv2.connectedComponentsWithStats(filled)
-    if n <= 1:
-        return None
-    areas = stats[1:, cv2.CC_STAT_AREA]
-    keep = [i + 1 for i, a in enumerate(areas) if a >= _KEEP_FRACTION * areas.max()]
-    return _bounded(np.isin(labels, keep))
+    paper = cv2.GaussianBlur(gray, (0, 0), max(gray.shape) / 30)
+    darker = paper.astype(np.int16) - gray.astype(np.int16)
+    marks = darker > max(12.0, 0.35 * float(np.percentile(darker, 99)))
+    return _enough(_drop_specks(marks))
 
 
-def photo_mask(img: np.ndarray) -> np.ndarray | None:
-    """Subject mask for a reference photo cropped to roughly the subject (GrabCut)."""
-    h, w = img.shape[:2]
-    if min(h, w) < 20:
-        return None
-    dx, dy = max(1, round(0.04 * w)), max(1, round(0.04 * h))
-    mask = np.zeros((h, w), np.uint8)
-    bgd, fgd = np.zeros((1, 65), np.float64), np.zeros((1, 65), np.float64)
-    try:
-        cv2.grabCut(img, mask, (dx, dy, w - 2 * dx, h - 2 * dy), bgd, fgd, 5, cv2.GC_INIT_WITH_RECT)
-    except cv2.error:
-        return None
-    fg = np.isin(mask, (cv2.GC_FGD, cv2.GC_PR_FGD)).astype(np.uint8)
-    n, labels, stats, _ = cv2.connectedComponentsWithStats(fg)
-    if n <= 1:
-        return None
-    biggest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
-    return _bounded(labels == biggest)
+def photo_edges(img: np.ndarray) -> np.ndarray | None:
+    """Strong edges in the reference photo (bool)."""
+    blurred = cv2.GaussianBlur(_gray(img), (0, 0), 1.5)
+    v = float(np.median(blurred))
+    edges = cv2.Canny(blurred, 0.33 * v, 0.66 * v + 20) > 0
+    return _enough(_drop_specks(edges))
 
 
-def contour_points(mask: np.ndarray, n: int = 400) -> np.ndarray:
-    """(n, 2) points evenly spaced along the largest outer contour, in pixels."""
-    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    c = max(contours, key=cv2.contourArea).reshape(-1, 2).astype(float)
-    closed = np.vstack([c, c[:1]])
-    seg = np.hypot(*np.diff(closed, axis=0).T)
-    cum = np.concatenate([[0], np.cumsum(seg)])
-    t = np.linspace(0, cum[-1], n, endpoint=False)
-    return np.column_stack([np.interp(t, cum, closed[:, 0]), np.interp(t, cum, closed[:, 1])])
+def line_points(mask: np.ndarray, n: int = MAX_POINTS) -> np.ndarray:
+    """Up to n (x, y) points spread over the mask's pixels, in a fixed order (deterministic)."""
+    ys, xs = np.nonzero(mask)
+    pts = np.column_stack([xs, ys]).astype(float)
+    if len(pts) > n:
+        pts = pts[np.linspace(0, len(pts) - 1, n).round().astype(int)]
+    return pts
+
+
+def subject_size(pts: np.ndarray) -> float:
+    """Square root of the points' bounding-box area."""
+    span = pts.max(axis=0) - pts.min(axis=0) + 1
+    return math.sqrt(float(span[0] * span[1]))
 
 
 @dataclass
@@ -98,86 +94,103 @@ class Similarity:
         m = self.matrix()
         return pts @ m[:, :2].T + m[:, 2]
 
+    def inverse(self) -> "Similarity":
+        return Similarity.from_matrix(cv2.invertAffineTransform(self.matrix()))
+
     @staticmethod
     def from_matrix(m: np.ndarray) -> "Similarity":
         return Similarity(math.hypot(m[0, 0], m[1, 0]), math.degrees(math.atan2(m[1, 0], m[0, 0])), m[0, 2], m[1, 2])
 
 
-def subject_size(pts: np.ndarray) -> float:
-    """Square root of the outline's polygon area."""
-    x, y = pts[:, 0], pts[:, 1]
-    return math.sqrt(abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1))) / 2)
+class _Field:
+    """Truncated distance to the nearest line pixel, looked up for many points at once."""
+
+    def __init__(self, mask: np.ndarray, cap: float):
+        self.cap = cap
+        self.dist = np.minimum(cv2.distanceTransform((~mask).astype(np.uint8), cv2.DIST_L2, 5), cap)
+        self.h, self.w = mask.shape
+
+    def at(self, pts: np.ndarray) -> np.ndarray:
+        """pts (..., 2) → distances (...); points off the image cost the cap."""
+        x, y = np.rint(pts[..., 0]).astype(int), np.rint(pts[..., 1]).astype(int)
+        inside = (x >= 0) & (x < self.w) & (y >= 0) & (y < self.h)
+        out = np.full(x.shape, self.cap, np.float32)
+        out[inside] = self.dist[y[inside], x[inside]]
+        return out
 
 
-def _nn(a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """For each point in a: distance to and index of its nearest point in b."""
-    d2 = ((a[:, None, :] - b[None, :, :]) ** 2).sum(axis=2)
-    idx = d2.argmin(axis=1)
-    return np.sqrt(d2[np.arange(len(a)), idx]), idx
+def align(photo_mask: np.ndarray, drawing_mask: np.ndarray) -> tuple[Similarity, float]:
+    """Best-fit similarity mapping photo pixels onto drawing pixels, and its cost.
+
+    The cost is the mean truncated two-way chamfer distance as a fraction of the cap: 0 is a
+    perfect fit, 1 means no line found a counterpart."""
+    p_pts, d_pts = line_points(photo_mask), line_points(drawing_mask)
+    d_size, p_size = subject_size(d_pts), subject_size(p_pts)
+    cap = TRUNCATE * d_size
+    to_drawing, to_photo = _Field(drawing_mask, cap), _Field(photo_mask, cap * p_size / d_size)
+    d_mid, p_mid = d_pts.mean(axis=0), p_pts.mean(axis=0)
+
+    def costs(scale, angle, shifts):
+        """Cost for one scale and angle at many shifts (k, 2) of the photo's centre in the drawing."""
+        m = Similarity(scale, angle, 0.0, 0.0).matrix()[:, :2]
+        p_rot = (p_pts - p_mid) @ m.T
+        fwd = to_drawing.at(p_rot[None] + shifts[:, None]).mean(axis=1) / to_drawing.cap
+        inv = np.linalg.inv(m)
+        d_back = (d_pts[None] - shifts[:, None]) @ inv.T + p_mid
+        back = to_photo.at(d_back).mean(axis=1) / to_photo.cap
+        return (fwd + back) / 2
+
+    def sim_of(scale, angle, shift):
+        m = Similarity(scale, angle, 0.0, 0.0).matrix()[:, :2]
+        t = shift - m @ p_mid
+        return Similarity(scale, angle, float(t[0]), float(t[1]))
+
+    grid = np.linspace(-SHIFT_RANGE, SHIFT_RANGE, 11) * d_size
+    shifts = d_mid + np.stack(np.meshgrid(grid, grid), axis=-1).reshape(-1, 2)
+    best = (math.inf, 1.0, 0.0, d_mid)
+    for scale in np.geomspace(*SCALE_RANGE, 11) * d_size / p_size:
+        for angle in np.arange(-MAX_ROTATION_DEG, MAX_ROTATION_DEG + 1e-9, 2.0):
+            c = costs(scale, angle, shifts)
+            i = int(np.argmin(c))
+            if c[i] < best[0]:
+                best = (float(c[i]), scale, float(angle), shifts[i])
+
+    # Refine by shrinking coordinate steps (the cost is piecewise constant, so no gradients).
+    cost, scale, angle, shift = best
+    steps = [0.03 * scale, 1.0, 0.01 * d_size]
+    while steps[1] > 0.05:
+        improved = False
+        for k in range(3):
+            for sign in (1, -1):
+                s, a, t = scale, angle, shift.copy()
+                if k == 0:
+                    s = scale + sign * steps[0]
+                elif k == 1:
+                    a = float(np.clip(angle + sign * steps[1], -MAX_ROTATION_DEG, MAX_ROTATION_DEG))
+                else:
+                    trial = np.array([t + (sign * steps[2], 0), t + (0, sign * steps[2])])
+                    c = costs(s, a, trial)
+                    j = int(np.argmin(c))
+                    if c[j] < cost:
+                        cost, shift, improved = float(c[j]), trial[j], True
+                    continue
+                c = float(costs(s, a, t[None])[0])
+                if c < cost:
+                    cost, scale, angle, improved = c, s, a, True
+        if not improved:
+            steps = [x / 2 for x in steps]
+    return sim_of(scale, angle, shift), cost
 
 
-def _principal_angle(pts: np.ndarray) -> float:
-    cov = np.cov((pts - pts.mean(axis=0)).T)
-    vals, vecs = np.linalg.eigh(cov)
-    v = vecs[:, np.argmax(vals)]
-    return math.degrees(math.atan2(v[1], v[0]))
+def line_distance(a: np.ndarray, b: np.ndarray, size: float, region: np.ndarray | None = None) -> float:
+    """Mean distance from a's points (optionally only those in `region`) to the nearest of b's,
+    capped per point at TRUNCATE·size and divided by size.
 
-
-def _sym_error(a: np.ndarray, b: np.ndarray) -> float:
-    return (_nn(a, b)[0].mean() + _nn(b, a)[0].mean()) / 2
-
-
-def align(src: np.ndarray, dst: np.ndarray, iterations: int = 30) -> Similarity:
-    """Best-fit similarity mapping src points onto dst points (moments init + ICP refinement)."""
-    scale0 = subject_size(dst) / max(subject_size(src), 1e-9)
-    d_angle = _principal_angle(dst) - _principal_angle(src)
-    best: tuple[float, Similarity] | None = None
-    candidates = [a for a in (_wrap(d_angle), _wrap(d_angle + 180.0)) if abs(a) <= MAX_ROTATION_DEG] + [0.0]
-    for angle in candidates:
-        rot = Similarity(scale0, angle, 0.0, 0.0).apply(src)
-        t = dst.mean(axis=0) - rot.mean(axis=0)
-        sim = Similarity(scale0, angle, t[0], t[1])
-        prev = math.inf
-        for _ in range(iterations):
-            _, idx = _nn(sim.apply(src), dst)
-            m, _ = cv2.estimateAffinePartial2D(src.astype(np.float32), dst[idx].astype(np.float32), method=cv2.LMEDS)
-            if m is None:
-                break
-            sim = Similarity.from_matrix(m)
-            err = _sym_error(sim.apply(src), dst)
-            if prev - err < 1e-3:
-                break
-            prev = err
-        if abs(_wrap(sim.angle_deg)) > MAX_ROTATION_DEG:
-            continue  # both images are upright; a large rotation means ICP slid into a mirror-image fit
-        err = _sym_error(sim.apply(src), dst)
-        if best is None or err < best[0]:
-            best = (err, sim)
-    if best is None:  # every refinement rotated too far: fall back to the moments-only estimate
-        rot = Similarity(scale0, 0.0, 0.0, 0.0).apply(src)
-        t = dst.mean(axis=0) - rot.mean(axis=0)
-        return Similarity(scale0, 0.0, t[0], t[1])
-    return best[1]
-
-
-def _wrap(angle: float) -> float:
-    return (angle + 180.0) % 360.0 - 180.0
-
-
-def outline_distance(a: np.ndarray, b: np.ndarray, size: float, region: np.ndarray | None = None) -> float:
-    """Symmetric mean nearest-point distance between outlines, divided by subject size.
-
-    With `region` (a bool mask over a's points), only a's points inside it and b's points
-    inside its padded bounding box count."""
-    if region is None:
-        return _sym_error(a, b) / size
-    a_sel = a[region]
-    if len(a_sel) == 0:
+    One-way on purpose: a is the drawing, b the photo's edges. Photo detail the artist chose
+    not to draw (texture, folds) must not count as an error."""
+    sel = a if region is None else a[region]
+    if len(sel) == 0:
         return 0.0
-    pad = 0.05 * size
-    (x0, y0), (x1, y1) = a_sel.min(axis=0) - pad, a_sel.max(axis=0) + pad
-    b_sel = b[(b[:, 0] >= x0) & (b[:, 0] <= x1) & (b[:, 1] >= y0) & (b[:, 1] <= y1)]
-    terms = [_nn(a_sel, b)[0].mean()]
-    if len(b_sel):
-        terms.append(_nn(b_sel, a)[0].mean())
-    return float(np.mean(terms)) / size
+    d2 = ((sel[:, None, :] - b[None, :, :]) ** 2).sum(axis=2)
+    nearest = np.sqrt(d2.min(axis=1))
+    return float(np.minimum(nearest, TRUNCATE * size).mean()) / size
